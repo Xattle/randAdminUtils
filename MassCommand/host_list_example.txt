@@ -1,0 +1,3 @@
+192.168.1.50
+HOSTNAME
+fully.qualified.hostname.com

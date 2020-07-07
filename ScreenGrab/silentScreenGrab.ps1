@@ -1,0 +1,1 @@
+POWERSHELL -WindowStyle Hidden -file "C:\temp\screenGrab10mService.ps1"
