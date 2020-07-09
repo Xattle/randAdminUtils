@@ -25,8 +25,8 @@ parser = argparse.ArgumentParser(
 )
 parser.add_argument("-t", "--targets", help="Name or location of the txt document with the target hosts listed. One per line, no extra punctuation. Defaults to host_list.txt in the current directory.")
 parser.add_argument("-c", "--copy", help="Folder or file to be copied to the target system. Can be used without a command to just push files.")
-parser.add_argument("-d", "--destination", help="Destination on the target computer to copy to. Defaults to \c$\temp")
-parser.add_argument("-r", "--run", help="Runs a command on all target machines as this user by running psexec \\host COMMAND. Use quotes arround COMMAND.")
+parser.add_argument("-d", "--destination", help="Destination on the target computer to copy to. Defaults to \\c$\\temp")
+parser.add_argument("-r", "--run", help="Runs a command on all target machines as this user by running psexec \\\\host COMMAND. Use quotes arround COMMAND.")
 parser.add_argument("-a", "--append", help="Rebuilds output_log.txt as normal but anything in .\logs will remain and be appended to.",default=False, action='store_true')
 args = parser.parse_args()
 
@@ -89,7 +89,7 @@ def push_copies():
         while line:
             line = line.strip('\n')
             line = line.strip('\t')
-            final_destination = f"\\\\{line}{args.destination}"
+            final_destination = f'\\\\{line}{args.destination}'
 
             #Generate header for each logfile
             f = open(f".\\logs\\{line}.log", "a")
@@ -101,8 +101,9 @@ def push_copies():
             print(f"Sending {args.copy} to {final_destination}")
 
             #Setup, then run the commands, dumping contents to its own logfile
-            final_command = f"xcopy {args.copy} {final_destination} /Y /E /H /C /I ^>^> .\\logs\\{line}.log"
-            subprocess.Popen(f"start cmd.exe /c {final_command}", shell=True)
+            final_command = f'xcopy "{args.copy}" "{final_destination}" /Y /E /H /C /I ^>^> .\\logs\\{line}.log'
+            print(final_command)
+            subprocess.Popen(f"start cmd.exe /k {final_command}", shell=True)
             print("--------------------------------------------")
             line = fp.readline()
             cnt += 1
