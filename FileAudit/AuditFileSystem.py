@@ -40,6 +40,7 @@ if args.outfile is not None:
         output_csv = True
     elif ".html" in args.outfile:
         output_html = True
+        html_name = args.outfile.replace(".html", "")
     else:
         output_cli = True
 else:
@@ -92,6 +93,115 @@ def write_ps1_file():
     f.write(ps1_contents)
     f.close()
 
+def html_formatter():
+    html_output_top=textwrap.dedent(f'''\
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <title>{html_name}</title>
+        <style>
+        ''')
+    html_output_predata=textwrap.dedent('''\
+        table {
+          border-spacing: 0;
+          width: 100%;
+          border: 1px solid #ddd;
+        }
+
+        th {
+          cursor: pointer;
+        }
+
+        th, td {
+          text-align: left;
+          padding: 16px;
+        }
+
+        tr:nth-child(even) {
+          background-color: #f2f2f2
+        }
+        </style>
+        </head>
+        <body>
+
+        <p><strong>Sortable by header.</strong></p>
+
+        <table id="myTable">
+          <tr>
+            <th onclick="sortTable(0)">User Group</th>
+            <th onclick="sortTable(1)">File System Rights</th>
+            <th onclick="sortTable(2)">Folder Path</th>
+            <th onclick="sortTable(3)">Is Inherited</th>
+          </tr>
+    ''')
+    html_output_postdata=textwrap.dedent('''\
+        </table>
+
+        <script>
+        function sortTable(n) {
+          var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
+          table = document.getElementById("myTable");
+          switching = true;
+          dir = "asc";
+          while (switching) {
+            switching = false;
+            rows = table.rows;
+            for (i = 1; i < (rows.length - 1); i++) {
+              shouldSwitch = false;
+              x = rows[i].getElementsByTagName("TD")[n];
+              y = rows[i + 1].getElementsByTagName("TD")[n];
+              if (dir == "asc") {
+                if (x.innerHTML.toLowerCase() > y.innerHTML.toLowerCase()) {
+                  shouldSwitch= true;
+                  break;
+                }
+              } else if (dir == "desc") {
+                if (x.innerHTML.toLowerCase() < y.innerHTML.toLowerCase()) {
+                  shouldSwitch = true;
+                  break;
+                }
+              }
+            }
+            if (shouldSwitch) {
+              rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
+              switching = true;
+              switchcount ++;
+            } else {
+              if (switchcount == 0 && dir == "asc") {
+                dir = "desc";
+                switching = true;
+              }
+            }
+          }
+        }
+        </script>
+
+        </body>
+        </html>
+
+    ''')
+
+    f = open(f"{args.outfile}", "a")
+    f.write(html_output_top)
+    f.write("\n")
+    f.write(html_output_predata)
+    f.write("\n")
+    f.write(f"")
+
+    with open(args.infile, 'r') as read_obj:
+        # pass the file object to reader() to get the reader object
+        csv_reader = csv.reader(read_obj)
+        # Iterate over each row in the csv using reader object
+        for row in csv_reader:
+            # row variable is a list that represents a row in csv
+            format_html = ', '.join(row)
+            format_html = format_html.replace(", ", "</td><td>")
+            html_output_data = (f"<tr><td>{format_html}</td></tr>")
+            f.write(html_output_data)
+    f.write("\n")
+    f.write(html_output_postdata)
+    f.close
+
 def cli_table_display():
     table = PrettyTable()
     table.field_names = ["User Group", "File System Rights", "Folder Path", "Is Inherited"]
@@ -114,6 +224,7 @@ def cli_table_display():
 if args.generate is True:
     write_ps1_file()
     print("GenerateFileAudit.ps1 has been created.")
+    sys.exit()
 elif args.infile is not None and args.scanpath is None:
     #Check for infile being the right type and existing
     if ".csv" not in args.infile:
@@ -131,6 +242,14 @@ elif args.infile is not None and args.scanpath is None:
     print ("Infile: " + args.infile)
     if args.outfile is not None:
         print ("Outfile: " + args.outfile)
+        if ".csv" in args.outfile:
+            print("CSV OUTPUT")
+        elif ".html" in args.outfile:
+            print("HTML OUTPUT")
+            html_formatter()
+        else:
+            print("Where am I?")
+
     else:
         print ("Outfile not specified. Displaying table in cli.")
     print()
