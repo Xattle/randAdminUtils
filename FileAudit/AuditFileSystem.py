@@ -108,7 +108,13 @@ def html_formatter():
         <body>
 
         <p><strong>Sortable by header.</strong></p>
-
+         <table id="myTable">
+          <tr>
+            <th onclick="sortTable(0)">User Group</th>
+            <th onclick="sortTable(1)">File System Rights</th>
+            <th onclick="sortTable(2)">Folder Path</th>
+            <th onclick="sortTable(3)">Is Inherited</th>
+          </tr>
     ''')
     html_output_postdata=textwrap.dedent('''\
 
