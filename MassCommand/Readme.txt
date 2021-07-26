@@ -15,3 +15,5 @@ Must have psexec.exe in the same directory as this script run programs but not t
 
 ####################TODO###########################
 Add output log for run command that captures command output - surprisingly painful
+
+Extremely dirty. Leaves multiple files on target machine unnecessarily.
