@@ -27,19 +27,19 @@ parser.add_argument("-j", "--jointype", help="Which kind of join to be performed
 
 args = parser.parse_args()
 
-if args.filea is '':
+if args.filea == '':
     sys.exit('File A must be specified')
-if args.fileb is '':
+if args.fileb == '':
     sys.exit('File B must be specified')
 
-if not os.path.isfile(filea):
-    sys.exit('Cannot find file {}!'.format(filea))
-if not os.path.isfile(fileb):
-    sys.exit('Cannot find file {}!'.format(fileb))
+if not os.path.isfile(args.filea):
+    sys.exit('Cannot find file {}!'.format(args.filea))
+if not os.path.isfile(args.fileb):
+    sys.exit('Cannot find file {}!'.format(args.fileb))
 
-if args.fileacolumn is '':
+if args.fileacolumn == '':
     sys.exit('File A column header to join must be specified.')
-if args.filebcolumn is '':
+if args.filebcolumn == '':
     sys.exit('File B column header to join must be specified.')
 
 def trim_all_columns(df):

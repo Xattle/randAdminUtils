@@ -13,7 +13,7 @@ $psexecloc = "..\PsExec.exe"
 foreach ($computer in $computers) {
 	$copyitemargs = "powershell -noninteractive -command Copy-Item $source -Destination \\$computer\$destination -Verbose"
 	Start-Process $psexecloc $copyitemargs
-	
+
 	#Slow down opening of processes to once every 2 seconds if there are more than 25 running
 	if ((ps -Name 'PsExe*').count -gt 25) {
 		Start-Sleep -s 2
@@ -26,7 +26,7 @@ Wait-Process -Name PsExec
 foreach ($computer in $computers) {
 	$psargs = "\\$computer POWERSHELL set-executionpolicy remotesigned"
 	Start-Process $psexecloc $psargs
-		
+
 	#Slow down opening of processes to once every 2 seconds if there are more than 25 running
 	if ((ps -Name 'PsExe*').count -gt 25) {
 		Start-Sleep -s 2
@@ -38,7 +38,7 @@ Wait-Process -Name PsExec
 #Generates printerlist.txt on remote PCs
 foreach ($computer in $computers) {
 	$psargs = "\\$computer /accepteula powershell -noninteractive -file C:\temp\printscan.ps1"
-  Start-Process $psexecloc $psargs	
+  Start-Process $psexecloc $psargs
 
 	#Slow down opening of processes to once every 2 seconds if there are more than 25 running
   if ((ps -Name 'PsExe*').count -gt 25) {
