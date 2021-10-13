@@ -1,0 +1,44 @@
+This file is just a list of useful one-liners or similarly small fragments that don't even fall under a small utility.
+Each should have a short description as well as what environment/shell to use it in.
+
+CMD
+
+  Check for remote users currently signed into a machine.
+    Query user /server:COMPUTER
+
+  List all tasks running on remote computer to local csv
+    Tasklist /s COMPUTER /v /fo csv > results.csv
+
+  Hijack other logged on user's sessions, use with query user id info
+  Only works if logged into target machine through RDP or locally
+  No password needed if running command prompt as system user (PsExec.exe -s)
+    tscon SESSIONID /DEST:CURRENTSESSION
+
+WMIC
+  Get software installed on machine
+    Wmic /node:COMPUTER product get name, version, vendor
+
+  Get Win10 and up License key from hardware
+    Wmic path softwarelicensingservice get OA3xOriginalProductKey
+
+PsExec.exe
+
+  Run a batch file remotely on all hosts in the host list
+    PsExec.exe @PATHTOHOSTLIST -i -u DOMAIN\USERNAME -c PATHTOBATCHFILE
+
+Powershell
+  Allow running of PS1 scripts
+    Set-ExecutionPolicy remotesigned
+
+  Get all AD users according to OU search.
+    Get-ADUser -Filter * |Where-Object { ($_.DistinguishedName -like "*OU=Branch*") } |Select SamAccountName
+
+  Get a csv of all files created today in the current location.
+    Get-Childitem .\ * -Recurse -ErrorAction SilentlyContinue | Where-Object {$_.CreationTime -gt (Get-Date).Date } | Select-Object -Property Name, CreationTime, Directory |Export-CSV -Path .\output.csv
+
+  On-Site Exchange - Only works on exchange server/session
+    Check Emails sent/received
+      Get-MessageTrace -StartDate "06/13/2018 00:00:00" |findstr "email@address.com" |findstr "SEND"
+
+    Search all mailboxes and copy matches to TargetMailbox
+      Get-Mailbox | Search-Mailbox -SearchQuery 'from:target@email.com' -TargetMailbox "username"
