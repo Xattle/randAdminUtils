@@ -17,3 +17,4 @@ foreach ($p in $powerMgmt)
                 }
   }
 }
+exit
