@@ -45,7 +45,7 @@
         "list": 
         [
             {
-                "commandline": "powershell.exe -NoExit -Command \"$host.UI.RawUI.WindowTitle = 'PWSH ' + $(Get-Date -Format 'HH:mm MM/dd/yyyy');\"",
+                "commandline": "pwsh -NoExit -Command \"$host.UI.RawUI.WindowTitle = 'PWSH ' + $(Get-Date -Format 'HH:mm MM/dd/yyyy');\"",
                 "guid": "{61c54bbd-c2c6-5271-96e7-009a87ff44bf}",
                 "hidden": false,
                 "name": "Windows PowerShell"
@@ -68,12 +68,12 @@
                 "name": "Sharepoint Shell"
             },
             {
-                "commandline": "powershell.exe -NoExit -Command \"$pchost = Read-Host \"Target Hostname pchost\"; $host.UI.RawUI.WindowTitle = $pchost + ' ' + $(Get-Date -Format 'HH:mm'); Enter-PSSession -ComputerName $pchost\"",
+                "commandline": "pwsh -NoExit -Command \"$pchost = Read-Host \"Target Hostname pchost\"; $host.UI.RawUI.WindowTitle = $pchost + ' ' + $(Get-Date -Format 'HH:mm'); Enter-PSSession -ComputerName $pchost\"",
                 "guid": "{e9c29bc1-6347-57d4-b1fc-26d8377fbc7d}",
                 "name": "Remote Session"
             },
             {
-                "commandline": "powershell.exe -NoExit -Command \"$pchost = Read-Host \"Target Hostname pchost\"; $host.UI.RawUI.WindowTitle = $pchost + ' ' + $(Get-Date -Format 'HH:mm'); $username = Read-Host \"Login Username\"; ssh -l $username $pchost\"",
+                "commandline": "pwsh -NoExit -Command \"$pchost = Read-Host \"Target Hostname pchost\"; $host.UI.RawUI.WindowTitle = $pchost + ' ' + $(Get-Date -Format 'HH:mm'); $username = Read-Host \"Login Username\"; ssh -l $username $pchost\"",
                 "guid": "{1fb664e1-813d-55bb-9b86-bb5361bc0c18}",
                 "name": "SSH Session"
             }

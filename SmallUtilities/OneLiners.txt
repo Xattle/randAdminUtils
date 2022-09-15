@@ -42,3 +42,12 @@ Powershell
 
     Search all mailboxes and copy matches to TargetMailbox
       Get-Mailbox | Search-Mailbox -SearchQuery 'from:target@email.com' -TargetMailbox "username"
+
+  Dump all computers into a variable based on search filter
+    $computers = Get-ADComputer -Filter 'Name -like "*"'
+
+  Check if computers are online
+    $computers.Name | ForEach-Object {Write-Output $_; Test-Connection -BufferSize 32 -Count 1 -ComputerName $_ -Quiet -TimeoutSeconds 1;}
+
+  Check logged in users for all computers.
+    $computers.Name | ForEach-Object {if (Test-Connection -BufferSize 32 -Count 1 -ComputerName $_ -Quiet -TimeoutSeconds 1) {Write-Output $_; query user /server:$_;}}
