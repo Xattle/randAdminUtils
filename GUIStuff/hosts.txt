@@ -1,0 +1,4 @@
+vdmc-jump
+vdmc-dc01
+vdmc-lapngris
+localhost
