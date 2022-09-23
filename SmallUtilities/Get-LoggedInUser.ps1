@@ -39,15 +39,23 @@ function Get-LoggedInUser
     )
 
     $out = @()
-
+    $percentComplete = 0
+    $computerIter = 1
     ForEach ($computer in $ComputerName)
     {
+        $percentComplete = [math]::Round($computerIter / $ComputerName.Count * 100)
+        Write-Progress -Activity "User Search in Progress" -Status "$percentComplete% Complete:" -PercentComplete $percentComplete
+        $computerIter++
         try { if (-not (Test-Connection -ComputerName $computer -Quiet -Count 1 -ErrorAction Stop)) { Write-Warning "Can't connect to $computer"; continue } }
         catch { Write-Warning "Can't test connect to $computer"; continue }
 
         $quserOut = quser.exe /SERVER:$computer 2>&1
         if ($quserOut -match "No user exists")
         { Write-Warning "No users logged in to $computer";  continue }
+
+        if ($quserOut -like "*Error 0*")
+        { Write-Warning "Access is denied on $computer";  continue }
+
 
         $users = $quserOut -replace '\s{2,}', ',' |
         ConvertFrom-CSV -Header 'username', 'sessionname', 'id', 'state', 'idleTime', 'logonTime' |
@@ -71,6 +79,8 @@ function Get-LoggedInUser
 
             $idleString = $users[$i].idleTime
             if ($idleString -eq '.') { $users[$i].idleTime = 0 }
+            if ($idleString -eq 'none') { $users[$i].idleTime = 0 }
+            if (!$idleString) { $users[$i].idleTime = 0 }
 
             # if it's just a number by itself, insert a '0:' in front of it. Otherwise [timespan] cast will interpret the value as days rather than minutes
             if ($idleString -match '^\d+$')
@@ -85,6 +95,7 @@ function Get-LoggedInUser
             }
 
             $users[$i].idleTime = [timespan]$users[$i].idleTime
+            if (!$users[$i].logonTime) { $users[$i].logonTime = 0 }
             $users[$i].logonTime = [datetime]$users[$i].logonTime
         }
         $users = $users | Sort-Object -Property idleTime
