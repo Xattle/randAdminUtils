@@ -51,3 +51,7 @@ Powershell
 
   Check logged in users for all computers.
     $computers.Name | ForEach-Object {if (Test-Connection -BufferSize 32 -Count 1 -ComputerName $_ -Quiet -TimeoutSeconds 1) {Write-Output $_; query user /server:$_;}}
+
+  Get all adusers last password change as human readable date and output to grid view then selection as csv
+    Get-ADUser -Filter * -Properties * |select cn, emailaddress, @{name ="pwdLastSet"; expression={[datetime]::FromFileTime($_.pwdLastSet)}}, UserPrincipalName, PasswordNeverExpires, Enabled | Out-GridView -PassThru | Export-Csv .\passwordChanges.csv
+    
