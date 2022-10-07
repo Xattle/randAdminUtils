@@ -57,22 +57,6 @@
                 "name": "Command Prompt"
             },
             {
-                "background": "#012456",
-                "commandline": "powershell.exe -NoExit -Command \"$host.UI.RawUI.WindowTitle = 'Exchange Online ' + $(Get-Date -Format 'HH:mm');New-ItemProperty -Path HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WinRM\\Client -Name AllowBasic -Value 1 -PropertyType DWORD -Force | Out-Null; Import-Module ExchangeOnlineManagement; Connect-ExchangeOnline -UserPrincipalName fswee@vandiestmc.org -ShowProgress $true\"",
-                "guid": "{2f59be3b-a8a2-4131-98c9-e8531cbc4dd9}",
-                "name": "Exchange Online Shell"
-            },
-            {
-                "commandline": "powershell.exe -NoExit -Command \"$host.UI.RawUI.WindowTitle = 'Sharepoint ' + $(Get-Date -Format 'HH:mm');Import-Module Microsoft.Online.SharePoint.PowerShell; Connect-SPOService -Url https://vandiestmcorg-admin.sharepoint.com/\"",
-                "guid": "{37569f98-a979-5e79-9791-781be5467c90}",
-                "name": "Sharepoint Shell"
-            },
-            {
-                "commandline": "powershell.exe -NoExit -Command \"$host.UI.RawUI.WindowTitle = 'PowerApps ' + $(Get-Date -Format 'HH:mm');Install-Module -Name Microsoft.PowerApps.Administration.PowerShell -AllowClobber -Force ;Install-Module -Name Microsoft.PowerApps.PowerShell -AllowClobber -Force;Add-PowerAppsAccount -Username fswee@vandiestmc.org\"",
-                "guid": "{14b15233-04d5-5170-8b20-341062edb201}",
-                "name": "PowerApps Shell"
-            },
-            {
                 "commandline": "pwsh -NoExit -Command \"$pchost = Read-Host \"Target Hostname pchost\"; $host.UI.RawUI.WindowTitle = $pchost + ' ' + $(Get-Date -Format 'HH:mm'); Enter-PSSession -ComputerName $pchost\"",
                 "guid": "{e9c29bc1-6347-57d4-b1fc-26d8377fbc7d}",
                 "name": "Remote Session"
@@ -81,6 +65,27 @@
                 "commandline": "pwsh -NoExit -Command \"$pchost = Read-Host \"Target Hostname pchost\"; $host.UI.RawUI.WindowTitle = $pchost + ' ' + $(Get-Date -Format 'HH:mm'); $username = Read-Host \"Login Username\"; ssh -l $username $pchost\"",
                 "guid": "{1fb664e1-813d-55bb-9b86-bb5361bc0c18}",
                 "name": "SSH Session"
+            },
+            {
+                "commandline": "powershell.exe -NoExit -Command \"$host.UI.RawUI.WindowTitle = 'Azure ' + $(Get-Date -Format 'HH:mm');Install-Module -Name AzureAD -AllowClobber -Force ;Connect-AzureAD;\"",
+                "guid": "{063c5f55-2959-5502-8bfd-44e77f12c597}",
+                "name": "Azure Shell"
+            },
+            {
+                "commandline": "powershell.exe -NoExit -Command \"$host.UI.RawUI.WindowTitle = 'PowerApps ' + $(Get-Date -Format 'HH:mm');Install-Module -Name Microsoft.PowerApps.Administration.PowerShell -AllowClobber -Force ;Install-Module -Name Microsoft.PowerApps.PowerShell -AllowClobber -Force;Add-PowerAppsAccount -Username fswee@vandiestmc.org\"",
+                "guid": "{14b15233-04d5-5170-8b20-341062edb201}",
+                "name": "PowerApps Shell"
+            },
+            {
+                "commandline": "powershell.exe -NoExit -Command \"$host.UI.RawUI.WindowTitle = 'Sharepoint ' + $(Get-Date -Format 'HH:mm');Import-Module Microsoft.Online.SharePoint.PowerShell; Connect-SPOService -Url https://vandiestmcorg-admin.sharepoint.com/\"",
+                "guid": "{37569f98-a979-5e79-9791-781be5467c90}",
+                "name": "Sharepoint Shell"
+            },
+            {
+                "background": "#012456",
+                "commandline": "powershell.exe -NoExit -Command \"$host.UI.RawUI.WindowTitle = 'Exchange Online ' + $(Get-Date -Format 'HH:mm');New-ItemProperty -Path HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WinRM\\Client -Name AllowBasic -Value 1 -PropertyType DWORD -Force | Out-Null; Import-Module ExchangeOnlineManagement; Connect-ExchangeOnline -UserPrincipalName fswee@vandiestmc.org -ShowProgress $true\"",
+                "guid": "{2f59be3b-a8a2-4131-98c9-e8531cbc4dd9}",
+                "name": "Exchange Online Shell"
             }
         ]
     },
