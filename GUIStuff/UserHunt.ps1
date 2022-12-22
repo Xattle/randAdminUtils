@@ -111,4 +111,4 @@ $computers = Get-ADComputer -Filter 'Name -like "*"'
 $output = Get-LoggedInUser -ComputerName $computers.name
 
 # Display user information
-$output | Out-GridView
+$output | Out-GridView -PassThru
