@@ -42,3 +42,21 @@ Powershell
 
     Search all mailboxes and copy matches to TargetMailbox
       Get-Mailbox | Search-Mailbox -SearchQuery 'from:target@email.com' -TargetMailbox "username"
+
+  Dump all computers into a variable based on search filter
+    $computers = Get-ADComputer -Filter 'Name -like "*"'
+
+  Check if computers are online
+    $computers.Name | ForEach-Object {Write-Output $_; Test-Connection -BufferSize 32 -Count 1 -ComputerName $_ -Quiet -TimeoutSeconds 1;}
+
+  Check logged in users for all computers.
+    $computers.Name | ForEach-Object {if (Test-Connection -BufferSize 32 -Count 1 -ComputerName $_ -Quiet -TimeoutSeconds 1) {Write-Output $_; query user /server:$_;}}
+
+  Get all adusers last password change as human readable date and output to grid view then selection as csv
+    Get-ADUser -Filter * -Properties * |select cn, emailaddress, @{name ="pwdLastSet"; expression={[datetime]::FromFileTime($_.pwdLastSet)}}, UserPrincipalName, LastLogonDate, PasswordNeverExpires, Enabled | Where-Object {!$_.PasswordNeverExpires -and $_.Enabled} | Out-GridView -PassThru -Title "Password Reset Dates" | Export-Csv .\passwordChanges.csv
+    
+  Speed test
+    $a=Get-Date; Invoke-WebRequest http://ipv4.download.thinkbroadband.com/10MB.zip|Out-Null; "$((10/((Get-Date)-$a).TotalSeconds)*8) Mbps"
+
+  Get device and driver information
+    Get-PnpDevice -PresentOnly -FriendlyName "Intel*Wi-Fi*" | Get-PnpDeviceProperty -KeyName DEVPKEY_Device_InstallDate
