@@ -60,3 +60,12 @@ Powershell
 
   Get device and driver information
     Get-PnpDevice -PresentOnly -FriendlyName "Intel*Wi-Fi*" | Get-PnpDeviceProperty -KeyName DEVPKEY_Device_InstallDate
+
+  Get software install data using registry
+    $Apps = @()
+    $Apps += Get-ItemProperty "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+    $Apps += Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*" 
+    $Apps | ogv
+
+  Get whether the lock screen is in use - whether computer is locked
+    Get-Process -Name "logonui"
