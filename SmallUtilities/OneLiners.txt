@@ -69,3 +69,6 @@ Powershell
 
   Get whether the lock screen is in use - whether computer is locked
     Get-Process -Name "logonui"
+
+  Enable remote event viewer
+    Set-NetFirewallRule -DisplayGroup 'Remote Event Log Management' -Enabled True -PassThru | Select-Object -Property DisplayName, Enabled
