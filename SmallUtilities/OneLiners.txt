@@ -72,3 +72,6 @@ Powershell
 
   Enable remote event viewer
     Set-NetFirewallRule -DisplayGroup 'Remote Event Log Management' -Enabled True -PassThru | Select-Object -Property DisplayName, Enabled
+
+  Logout selected users after running Get-LoggedInUser
+    $result | ogv -PassThru | ForEach-Object { cmd.exe /c "logoff $($_.id) /SERVER:$($_.ComputerName)"}

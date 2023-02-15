@@ -106,9 +106,24 @@ function Get-LoggedInUser
     }
     Write-Output $out
 }
+
+# Get the function's definition *as a string*
+$funcDef = ${function:Get-LoggedInUser}.ToString()
+
 # Get list of computers from ad
 $computers = Get-ADComputer -Filter 'Name -like "*"'
-$output = Get-LoggedInUser -ComputerName $computers.name
+$output = [System.Collections.Concurrent.ConcurrentBag[psobject]]::new()
 
+$computers | ForEach-Object -ThrottleLimit 50 -Parallel {
+    ${function:Get-LoggedInUser} = $using:funcDef
+    $computer = $_
+    $localOutput = $using:output
+    $localOutput.Add($(Get-LoggedInUser -ComputerName $computer.name))
+}
+
+$result = @()
+$output | ForEach-Object {
+    $result += $_
+}
 # Display user information
-$output | Out-GridView -PassThru
+$result | Out-GridView -PassThru
