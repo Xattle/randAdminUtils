@@ -1,6 +1,90 @@
 # Adds useful Powershell functions
 # Get-ServiceUptime
 # Get-LoggedInUser - Powershell wrapper for query user
+# Update-SecurityGroups
+# Get-NetworkSpeed
+
+
+function Get-NetworkSpeed {
+    $a=Get-Date
+    Invoke-WebRequest http://ipv4.download.thinkbroadband.com/10MB.zip|Out-Null
+    $output = "$((10/((Get-Date)-$a).TotalSeconds)*8) Mbps Download"
+    return $output
+}
+
+function Get-NetSpeed {
+    #SIZE OF SPECIFIED FILE IN MB (10 or 100)
+    $size = 100
+    
+    #FILE TO DOWNLOAD
+    $downloadUrl = "http://ipv4.download.thinkbroadband.com/$($size)MB.zip"
+    $uploadUrl = "http://ipv4.download.thinkbroadband.com/$($size)MB.zip"
+    
+    #WHERE TO STORE DOWNLOADED FILE
+    $localfile = "$($env:TEMP)/$($size)MB.zip"
+    
+    Write-Output "$($size)MB test started at $(get-date -Format "HH:mm:ss MM/dd/yyyy")"
+    
+    #RUN DOWNLOAD
+    $webclient = New-Object System.Net.WebClient
+    $webclient.Headers.Add("User-Agent: Other")
+    $downloadstart_time = Get-Date
+    $webclient.DownloadFile($downloadurl, $localfile)
+    
+    #CALCULATE DOWNLOAD SPEED
+    $downloadtimetaken = $((Get-Date).Subtract($downloadstart_time).Seconds)
+    $downloadspeed = ($size / $downloadtimetaken)*8
+    Write-Output "Time taken: $downloadtimetaken second(s)   |   Download Speed: $downloadspeed mbps"
+    
+    #RUN UPLOAD
+    $uploadstart_time = Get-Date
+    $webclient.UploadFile($UploadURL, $localfile) > $null;
+    
+    #CALCULATE UPLOAD SPEED
+    $uploadtimetaken = $((Get-Date).Subtract($uploadstart_time).Seconds)
+    $uploadspeed = ($size / $uploadtimetaken) * 8
+    Write-Output "Upload currently broken. Need to find site to allow for upload testing"
+    Write-Output "Time taken: $uploadtimetaken second(s)   |   Upload Speed: $uploadspeed mbps" 
+
+    #DELETE TEST DOWNLOAD FILE
+    Remove-Item –path $localfile
+
+}
+
+function Update-SecurityGroups {
+    <#
+    .SYNOPSIS
+        Refreshes Kerberos tickets updating computer security group listings
+
+    .DESCRIPTION
+        Uses the klist commands as well as gpupdate to refresh the kerberos tickets for the computer. Has to be ran as admin and only works on remote devices if Powershell Remoting is enabled.
+
+    .PARAMETER Computer
+        Computer to refresh tickets on
+
+    .EXAMPLE
+        PS C:\> Update-SecurityGroups
+    #>
+
+[CmdletBinding()]
+    param(
+        [string]$Computer = 'None'
+    )
+    
+    if ($Computer -ne 'None' ) {
+        Enter-PSSession -ComputerName $Computer
+    }
+    
+    klist.exe sessions | findstr /i $env:COMPUTERNAME
+    klist.exe -li 0x3e7 purge
+    gpupdate /force
+        
+    if ($Computer -ne 'None' ) {
+        Exit-PSSession
+    }
+
+}
+
 
 function Get-ServiceUptime
 {
