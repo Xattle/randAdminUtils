@@ -93,12 +93,16 @@ function Get-CiscoPhoneStreams
 				$phone = $_
 			}
 			$result = invoke-WebRequest "http://$($phone)/CGI/Java/Serviceability?adapter=device.statistics.streaming.0" -TimeoutSec 3
+			$resultDevInfo = invoke-WebRequest "http://$($phone)/CGI/Java/Serviceability?adapter=device.statistics.device" -TimeoutSec 3
 			$result = ConvertFrom-Html $result.Content
+			$resultDevInfo = ConvertFrom-Html $resultDevInfo.Content
 			$phoneName = $result.selectNodes('//tr[1]/td[2]/p[2]/b/font').InnerText
 			$streamStatus = $result.selectNodes('//tr/td/b')[10].InnerText
 
-			$additionalDataPoints = "Cumulative Conceal Ratio,Max ConcealRatio,Conceal Seconds,Severely Conceal Seconds,Receiver discarded"
-			$additionalDataPoints = $result.selectNodes('//tr/td/b')[38].InnerText + ","
+			$additionalDataPoints = "Extension,Firmware,Cumulative Conceal Ratio,Max ConcealRatio,Conceal Seconds,Severely Conceal Seconds,Receiver discarded"
+			$additionalDataPoints = $resultDevInfo.selectNodes('//tr/td/b')[14].InnerText + ","
+			$additionalDataPoints += $resultDevInfo.selectNodes('//tr/td/b')[20].InnerText + ","
+			$additionalDataPoints += $result.selectNodes('//tr/td/b')[38].InnerText + ","
 			$additionalDataPoints += $result.selectNodes('//tr/td/b')[42].InnerText + ","
 			$additionalDataPoints += $result.selectNodes('//tr/td/b')[44].InnerText + ","
 			$additionalDataPoints += $result.selectNodes('//tr/td/b')[46].InnerText + ","
@@ -118,7 +122,7 @@ function Get-CiscoPhoneStreams
 			<#Do this if a terminating exception happens#>
 		}
 	}
-	$additionalDataPoints = "Cumulative Conceal Ratio,Max ConcealRatio,Conceal Seconds,Severely Conceal Seconds,Receiver discarded"
+	$additionalDataPoints = "Extension,Firmware,Cumulative Conceal Ratio,Max ConcealRatio,Conceal Seconds,Severely Conceal Seconds,Receiver discarded"
 	if ($mode -eq "csv") {
 		$results = "IP,Type,Description,Name,Stream Status,$additionalDataPoints"
 	} else {
