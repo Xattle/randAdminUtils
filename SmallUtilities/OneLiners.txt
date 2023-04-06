@@ -75,3 +75,5 @@ Powershell
 
   Logout selected users after running Get-LoggedInUser
     $result | ogv -PassThru | ForEach-Object { cmd.exe /c "logoff $($_.id) /SERVER:$($_.ComputerName)"}
+
+  Refresh kerberos tickets and security groups using the Update-SecurityGroups functions in PSImports.ps1
