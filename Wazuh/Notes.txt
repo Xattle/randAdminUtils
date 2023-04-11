@@ -1,0 +1,13 @@
+#Get outdated agent
+#GET /agents/outdated?pretty=true
+
+#Upgrade agent
+#PUT /agents/upgrade?agents_list={ID}&pretty=true
+
+#GET /agents/{ID}/stats/agent
+
+#Add agent to group
+#PUT /agents/{ID}/group/default?pretty=true
+
+#Remove agent from group
+#DELETE /agents/{ID}/group/default?pretty=true
