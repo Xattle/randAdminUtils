@@ -77,3 +77,15 @@ Powershell
     $result | ogv -PassThru | ForEach-Object { cmd.exe /c "logoff $($_.id) /SERVER:$($_.ComputerName)"}
 
   Refresh kerberos tickets and security groups using the Update-SecurityGroups functions in PSImports.ps1
+
+  Check for specific event IDs, return the last 10 hits
+    wevtutil qe system "/q:*[System [(EventID=41) or (EventID=1074) or (EventID=6005) or (EventID=6006) or (EventID=6008)]]" /rd:true /f:text /c:10
+      Only return datetime
+        wevtutil qe system "/q:*[System [(EventID=6006)]]" /rd:true /f:text /c:10 | findstr /i "date"
+        wevtutil qe system "/q:*[System [(EventID=41) or (EventID=1074) or (EventID=6005) or (EventID=6006) or (EventID=6008)]]" /rd:true /f:text /c:10 | findstr /i "date"
+      Useful IDs
+        41 Partial reboot
+        1074 Start or application shutdown/reboot
+        6005 Startup
+        6006 Proper shutdown
+        6008 Unexpected shutdown

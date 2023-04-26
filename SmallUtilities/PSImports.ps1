@@ -51,6 +51,17 @@ function Get-NetSpeed {
 
 }
 
+function Get-TestingStuff {
+    [CmdletBinding()]
+        param(
+            [Parameter(ValueFromPipeline)][string]$ComputerName
+        )
+
+        process {
+            Get-Service -ComputerName $ComputerName
+        }
+}
+
 function Update-SecurityGroups {
     <#
     .SYNOPSIS
@@ -59,30 +70,41 @@ function Update-SecurityGroups {
     .DESCRIPTION
         Uses the klist commands as well as gpupdate to refresh the kerberos tickets for the computer. Has to be ran as admin and only works on remote devices if Powershell Remoting is enabled.
 
-    .PARAMETER Computer
-        Computer to refresh tickets on
+    .PARAMETER ComputerName
+        Computer to refresh tickets on.
 
     .EXAMPLE
-        PS C:\> Update-SecurityGroups
+        PS C:\> Update-SecurityGroups -ComputerName TARGETHOSTNAME
     #>
 
 [CmdletBinding()]
     param(
-        [string]$Computer = 'None'
+        [Parameter(
+            Position = 0,
+            ValueFromPipeline = $true,    
+            ValueFromPipelineByPropertyName = $true
+            )]
+        [Alias('ComputerName')]
+        [string]$Name = $env:COMPUTERNAME
     )
-    
-    if ($Computer -ne 'None' ) {
-        Enter-PSSession -ComputerName $Computer
-    }
-    
-    klist.exe sessions | findstr /i $env:COMPUTERNAME
-    klist.exe -li 0x3e7 purge
-    gpupdate /force
-        
-    if ($Computer -ne 'None' ) {
-        Exit-PSSession
-    }
 
+    process {
+            $computer = $Name
+            if ($computer -eq $env:COMPUTERNAME) {
+                Write-Output "Running locally on $computer"
+                # klist.exe sessions | findstr /i $env:COMPUTERNAME
+                # klist.exe -li 0x3e7 purge
+                # gpupdate /force
+            } else {
+                Write-Output "Connecting to $computer"
+                Enter-PSSession -ComputerName $computer
+                # klist.exe sessions | findstr /i $env:COMPUTERNAME
+                # klist.exe -li 0x3e7 purge
+                # gpupdate /force
+                Exit-PSSession
+            }
+    }
+    
 }
 
 
