@@ -89,3 +89,7 @@ Powershell
         6005 Startup
         6006 Proper shutdown
         6008 Unexpected shutdown
+
+  Get external IP address
+    nslookup myip.opendns.com. resolver1.opendns.com
+    Invoke-RestMethod ipinfo.io/ip
