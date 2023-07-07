@@ -1,0 +1,14 @@
+Dynamic Widths
+    Full
+        If(App.Width > 640, Parent.Width / 2, Parent.Width)
+    Half
+        If(App.Width > 640, Parent.Width / 4, Parent.Width /2)
+    Var based
+        OnStart
+            Set(FullWidthDivisor, 2);
+            Set(HalfWidthDivisor, 4);
+            Set(ScreenSplitWidth, 640);
+        Full w var
+            If(App.Width > ScreenSplitWidth, Parent.Width / FullWidthDivisor, Parent.Width)
+        Half w var
+            If(App.Width > ScreenSplitWidth, Parent.Width / HalfWidthDivisor, Parent.Width / 2)
