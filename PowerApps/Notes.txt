@@ -12,3 +12,6 @@ Dynamic Widths
             If(App.Width > ScreenSplitWidth, Parent.Width / FullWidthDivisor, Parent.Width)
         Half w var
             If(App.Width > ScreenSplitWidth, Parent.Width / HalfWidthDivisor, Parent.Width / 2)
+
+New Submission - Hide unless option is chose
+    DataCardValue8.Selected.Value="Yes"
