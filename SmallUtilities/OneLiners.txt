@@ -93,3 +93,12 @@ Powershell
   Get external IP address
     nslookup myip.opendns.com. resolver1.opendns.com
     Invoke-RestMethod ipinfo.io/ip
+  
+  Jigglers
+    Keyboard jiggler
+      $wshell = New-Object -ComObject wscript.shell; while($True){ Start-Sleep -Seconds 60; $wshell.SendKeys('{F13}') }
+    Mouse jiggler top left
+      Add-Type -AssemblyName System.Windows.Forms;while($True){[Windows.Forms.Cursor]::Position=((Get-Random 100).(Get-Random 100));Start-Sleep 60}
+    Mouse jiggler but anywhere on the screen
+      Add-Type -AssemblyName System.Windows.Forms; $w=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width; $h=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height; while($True) { [Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point((Get-Random -Minimum 0 -Maximum $w), (Get-Random -Minimum 0 -Maximum $h)); Start-Sleep 60 }
+
