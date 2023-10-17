@@ -33,6 +33,9 @@ Powershell
   Get all AD users according to OU search.
     Get-ADUser -Filter * |Where-Object { ($_.DistinguishedName -like "*OU=Branch*") } |Select SamAccountName
 
+  Get user profiles not used in the last 365 days
+  Get-CimInstance -ClassName Win32_UserProfile | Where-Object {(!$_.Special) -and ([DateTime]::Parse($_.LastUseTime) -lt (Get-Date).AddDays(-365))} | sort -Property LastUseTime
+
   Get a csv of all files created today in the current location.
     Get-Childitem .\ * -Recurse -ErrorAction SilentlyContinue | Where-Object {$_.CreationTime -gt (Get-Date).Date } | Select-Object -Property Name, CreationTime, Directory |Export-CSV -Path .\output.csv
 
