@@ -68,7 +68,7 @@ Powershell
     $Apps = @()
     $Apps += Get-ItemProperty "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
     $Apps += Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*" 
-    $Apps | ogv
+    $Apps | ft
 
   Get whether the lock screen is in use - whether computer is locked
     Get-Process -Name "logonui"
