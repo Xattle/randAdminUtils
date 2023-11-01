@@ -1,5 +1,6 @@
 This file is just a list of useful one-liners or similarly small fragments that don't even fall under a small utility.
 Each should have a short description as well as what environment/shell to use it in.
+Also includes cool things to revisit and examples of commands that are forgettable if not frequently used.
 
 CMD
 
@@ -13,6 +14,10 @@ CMD
   Only works if logged into target machine through RDP or locally
   No password needed if running command prompt as system user (PsExec.exe -s)
     tscon SESSIONID /DEST:CURRENTSESSION
+
+  Check group policy
+    Gpresult /r /scope computer
+    gpresult /r /scope user
 
 WMIC
   Get software installed on machine
@@ -105,3 +110,22 @@ Powershell
     Mouse jiggler but anywhere on the screen
       Add-Type -AssemblyName System.Windows.Forms; $w=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width; $h=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height; while($True) { [Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point((Get-Random -Minimum 0 -Maximum $w), (Get-Random -Minimum 0 -Maximum $h)); Start-Sleep 60 }
 
+  ORCA - https://office365itpros.com/2019/11/14/orca-checks-office365-atp-settings/
+    Install-Module -Name ORCA
+    Import-Module ExchangeOnlineManagement
+
+    Get-ORCAReport 
+
+  Command to encoded command (Only works on PS V5 and up) - https://stackoverflow.com/questions/22258668/how-to-condense-powershell-script-to-fit-on-a-single-line
+    Turn a script into raw Base64
+      $command = Get-Content .\YourPowerShellFileContainingTheCode.ps1 -raw
+      # Get-Content may require "-encoding utf8" or other encodings depending on your file
+      $encodedCommand = [System.Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+      Write-Output "Text for application:"
+      Write-Output "PowerShell.exe" ""
+      Write-Output "Text for argurments:"
+      Write-Output "-encodedCommand $encodedCommand"
+
+    Run base64 script using PowerShell (Works awesome for scheduled tasks and remote commands where you may not want to bother with creating a script/changing ExecutionPolicy)
+      PowerShell.exe -encodedCommand EncodedCommandStringOutputFromTheBase64Above
+      
