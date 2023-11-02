@@ -1,12 +1,12 @@
 # Finds profiles that haven't logged in in the last 14 days and removes teams from appdata and registry.
 # When using Teams Machine-Wide Installer, this will enable a short reinstall of the latest version on next login.
 # Can take -DaysSinceLastLogin as a parameter. Use -1
-function Clean-TeamsProfiles {
+function Remove-TeamsProfiles {
     <#
     .SYNOPSIS
     Cleans up Microsoft Teams installations for user profiles based on last login time. 
     
-    NOTE: Because of limitations using ntuser.dat or other methods of tracking when a profile was last used, this script relies on checking %appdata%\access.log for the last write time. This doesn't exist normally but can be easily added to an environment through a logon script GPO or task that runs "echo Logon %date% %time% > %APPDATA%\access.log"
+    NOTE: Because of limitations using ntuser.dat or other methods of tracking when a profile was last used, this script relies on checking %appdata%\access.log for the last write time. This doesn't exist normally but can be easily added to an environment through a logon script GPO or task that runs "echo Logon %date% %time% > %APPDATA%\access.log" If access.log doesn't exist, all teams profiles will be deleted.
 
     .DESCRIPTION
     This script finds user profiles that haven't logged in within the specified number of days and removes Microsoft Teams from their AppData folders and registry entries. You can set the number of days for the last login using the -DaysSinceLastLogin parameter. If you want to clean all profiles regardless of their last login time, you can use -1 for -DaysSinceLastLogin.
@@ -64,11 +64,11 @@ function Clean-TeamsProfiles {
 
 if ($(Split-Path $MyInvocation.InvocationName -Leaf) -eq $MyInvocation.MyCommand) {
     try {
-        # If so, run the Clean-TeamsProfiles function
-        Clean-TeamsProfiles @args
+        # If so, run the Remove-TeamsProfiles function
+        Remove-TeamsProfiles @args
         
     }
     catch {
-        Write-Output "This script can be dot-sourced using using . .\Clean-TeamsProfiles.ps1 then run Get-Help Clean-TeamsProfiles for more details."
+        Write-Output "This script can be dot-sourced using using . .\Remove-TeamsProfiles.ps1 then run Get-Help Remove-TeamsProfiles for more details."
     }
 }
