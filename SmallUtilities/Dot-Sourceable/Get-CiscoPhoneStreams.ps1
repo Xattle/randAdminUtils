@@ -136,8 +136,16 @@ function Get-CiscoPhoneStreams
 	return ConvertFrom-Csv $results
 }
 
-Write-Output "To run this script, dot-source the file using . .\Get-CiscoPhoneStreams.ps1 then run Get-Help Get-CiscoPhoneStreams"
-
+if ($(Split-Path $MyInvocation.InvocationName -Leaf) -eq $MyInvocation.MyCommand) {
+    try {
+        # If so, run the Get-CiscoPhoneStreams function
+        Get-CiscoPhoneStreams @args
+        
+    }
+    catch {
+        Write-Output "This script can be dot-sourced using using . .\Get-CiscoPhoneStreams.ps1 then run Get-Help Get-CiscoPhoneStreams for more details."
+    }
+}
 
 # # Notes: The following are the array ID of the Stream stat, the stream stat name, and the +1 in the array for that stat which should correspond to its value
 # 1,Device logs,Streaming statistics

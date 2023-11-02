@@ -103,3 +103,14 @@ function Get-LoggedInUser
     }
     Write-Output $out
 }
+
+if ($(Split-Path $MyInvocation.InvocationName -Leaf) -eq $MyInvocation.MyCommand) {
+    try {
+        # If so, run the Get-LoggedInUser function
+        Get-LoggedInUser @args
+        
+    }
+    catch {
+        Write-Output "This script can be dot-sourced using using . .\Get-LoggedInUser.ps1 then run Get-Help Get-LoggedInUser for more details."
+    }
+}

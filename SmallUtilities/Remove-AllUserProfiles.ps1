@@ -7,7 +7,7 @@ foreach ($profile in $profilesToDelete) {
     $profilePath = $profile.LocalPath
     Write-Host "Deleting user profile: $profilePath"
     
-    # Remove the user profile
+    # Remove the user profile - use WhatIf in testing mode
     Remove-CimInstance -InputObject $profile -Confirm:$false -WhatIf
     
     # Remove the user folder if it exists
