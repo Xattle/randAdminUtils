@@ -14,10 +14,10 @@ $UserProfileFolders = Get-ChildItem -Path C:\Users -Directory
 
 foreach ($UserProfileFolder in $UserProfileFolders) {
     $UserProfilePath = $UserProfileFolder.FullName
-    $LastModifiedTime = $UserProfileFolder.LastWriteTime
+    $LastModifiedTime = $(Get-Item "$($UserProfileFolder.FullName)\Appdata\Roaming\access.log").LastWriteTime
 
     # Check if the user hasn't logged in within the specified days
-    if (($CurrentDate - $LastModifiedTime).Days -gt $DaysSinceLastLogin) {
+    if (-not (Test-Path -Path $AccessLogPath) -or ($CurrentDate - $LastModifiedTime).Days -gt $DaysSinceLastLogin) {
         try {
             # Remove Teams directories
             Remove-Item -Path "$UserProfilePath\AppData\Local\Microsoft\Teams" -Recurse -Force -ErrorAction Continue

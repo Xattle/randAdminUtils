@@ -19,6 +19,9 @@ CMD
     Gpresult /r /scope computer
     gpresult /r /scope user
 
+  Log when a user logs in. Works nicely with Logon scripts GPO to setup a way to track profile logins on a local machine.
+    echo Logon %date% %time% > %APPDATA%\access.log
+
 WMIC
   Get software installed on machine
     Wmic /node:COMPUTER product get name, version, vendor
