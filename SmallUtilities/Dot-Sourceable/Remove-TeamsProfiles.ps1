@@ -36,19 +36,19 @@ function Remove-TeamsProfiles {
 
     foreach ($UserProfileFolder in $UserProfileFolders) {
         $UserProfilePath = $UserProfileFolder.FullName
-        $LastModifiedTime = $(Get-Item "$($UserProfileFolder.FullName)\Appdata\Roaming\access.log").LastWriteTime
+        $LastModifiedTime = $(Get-Item "$($UserProfileFolder.FullName)\Appdata\Roaming\access.log" -ErrorAction SilentlyContinue).LastWriteTime
 
         # Check if the user hasn't logged in within the specified days
         if (-not $LastModifiedTime -or ($CurrentDate - $LastModifiedTime).Days -gt $DaysSinceLastLogin) {
             try {
                 # Remove Teams directories
-                Remove-Item -Path "$UserProfilePath\AppData\Local\Microsoft\Teams" -Recurse -Force -ErrorAction Continue
-                Remove-Item -Path "$UserProfilePath\AppData\Local\Microsoft\TeamsMeetingAddin" -Recurse -Force -ErrorAction Continue
-                Remove-Item -Path "$UserProfilePath\AppData\Local\Microsoft\TeamsPresenceAddin" -Recurse -Force -ErrorAction Continue
+                Remove-Item -Path "$UserProfilePath\AppData\Local\Microsoft\Teams" -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -Path "$UserProfilePath\AppData\Local\Microsoft\TeamsMeetingAddin" -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -Path "$UserProfilePath\AppData\Local\Microsoft\TeamsPresenceAddin" -Recurse -Force -ErrorAction SilentlyContinue
 
                 # Remove Teams registry entries
                 $UserSID = $(Get-ADUser -Identity $UserProfileFolder.Name).SID
-                Remove-Item -Path "Registry::HKEY_USERS\$UserSID\Software\Microsoft\Office\Teams" -Recurse -Force -ErrorAction Continue
+                Remove-Item -Path "Registry::HKEY_USERS\$UserSID\Software\Microsoft\Office\Teams" -Recurse -Force -ErrorAction SilentlyContinue
                     
                 # Log successful cleanup
                 Write-Output "Successfully cleaned up Teams for $($UserProfileFolder.Name)"
