@@ -4,7 +4,7 @@
 function Remove-TeamsProfiles {
     <#
     .SYNOPSIS
-    Cleans up Microsoft Teams installations for user profiles based on last login time. 
+    Cleans up Microsoft Teams installations for user profiles based on last login time. Uses Active Directory for SID so will need adjustments for local-only profiiles.
     
     NOTE: Because of limitations using ntuser.dat or other methods of tracking when a profile was last used, this script relies on checking %appdata%\access.log for the last write time. This doesn't exist normally but can be easily added to an environment through a logon script GPO or task that runs "echo Logon %date% %time% > %APPDATA%\access.log" If access.log doesn't exist, all teams profiles will be deleted.
 
@@ -47,7 +47,7 @@ function Remove-TeamsProfiles {
                 Remove-Item -Path "$UserProfilePath\AppData\Local\Microsoft\TeamsPresenceAddin" -Recurse -Force -ErrorAction Continue
 
                 # Remove Teams registry entries
-                $UserSID = $UserProfileFolder.Name
+                $UserSID = $(Get-ADUser -Identity $UserProfileFolder.Name).SID
                 Remove-Item -Path "Registry::HKEY_USERS\$UserSID\Software\Microsoft\Office\Teams" -Recurse -Force -ErrorAction Continue
                     
                 # Log successful cleanup
