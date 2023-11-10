@@ -7,7 +7,8 @@
 - Microsoft Terminal - https://github.com/microsoft/terminal
 - PowerToys - https://learn.microsoft.com/en-us/windows/powertoys/
 - VSCode - https://code.visualstudio.com/
-
+- Everything - https://www.voidtools.com/
+- WinDirStat - https://windirstat.net/
 
 ## Hardware Stuff
 
