@@ -132,3 +132,17 @@ Powershell
     Run base64 script using PowerShell (Works awesome for scheduled tasks and remote commands where you may not want to bother with creating a script/changing ExecutionPolicy)
       PowerShell.exe -encodedCommand EncodedCommandStringOutputFromTheBase64Above
       
+  Install Microsoft Graph PowerShell SDK
+    Powershell >= 5.1
+    Dotnet >= 4.7
+    Install-Module PowerShellGet
+    Get-ExecutionPolicy
+    Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+    Install-Module Microsoft.Graph -Scope CurrentUser
+    Get-InstalledModule Microsoft.Graph
+
+
+  Privileged Identity Management controls
+    To connect and view PIM scopes (Requires M$ Graph PowerShell SDK)
+      Connect-MgGraph -Scopes "RoleManagement.ReadWrite.Directory"
+      Get-MgRoleManagementDirectoryRoleEligibilityScheduleInstance -Filter "principalId eq '$UUID'"  | Format-List
