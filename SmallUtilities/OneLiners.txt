@@ -146,3 +146,6 @@ Powershell
     To connect and view PIM scopes (Requires M$ Graph PowerShell SDK)
       Connect-MgGraph -Scopes "RoleManagement.ReadWrite.Directory"
       Get-MgRoleManagementDirectoryRoleEligibilityScheduleInstance -Filter "principalId eq '$UUID'"  | Format-List
+
+  Fix domain computer trust without a full rejoin
+    Test-ComputerSecureChannel -Repair -Credential $cred
