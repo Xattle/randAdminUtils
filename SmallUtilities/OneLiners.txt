@@ -149,3 +149,9 @@ Powershell
 
   Fix domain computer trust without a full rejoin
     Test-ComputerSecureChannel -Repair -Credential $cred
+
+  Find deleted AD objects
+    $restoreItem = Get-ADObject -IncludeDeletedObjects -Filter * | ogv -PassThru
+
+  Restore deleted AD objects
+    Restore-ADObject $restoreItem
