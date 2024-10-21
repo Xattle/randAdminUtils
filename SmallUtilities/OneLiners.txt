@@ -155,3 +155,8 @@ Powershell
 
   Restore deleted AD objects
     Restore-ADObject $restoreItem
+
+
+  Citrix
+    Get-BrokerAccessPolicyRule | select @{Name='DG Name';Expression={ $_.name}} -ExpandProperty includedusers | select 'DG Name',Name
+      Generate a list of all delivery groups and users that have access to them
