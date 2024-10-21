@@ -1,0 +1,8 @@
+#Run following on the backup restore page from console command replacing FILENAME.wpress with the target backup
+
+var filename = 'FILENAME.wpress';
+var importer = new Ai1wm.Import();
+var storage = Ai1wm.Util.random(12);
+var options = Ai1wm.Util.form('#ai1wm-backups-form').concat({name: 'storage', value: storage}).concat({name: 'archive', value: filename});
+importer.setParams(options);
+importer.start();
