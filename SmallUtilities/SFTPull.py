@@ -4,6 +4,19 @@ import textwrap
 import shutil
 import ntpath
 import os
+import logger
+
+#Make logger and do stuff
+logger=logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler = logging.StreamHandler(sys.stderr)
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+handler = logging.StreamHandler(sys.stderr)
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+del handler
 
 #Handle command line args
 parser = argparse.ArgumentParser(
@@ -31,12 +44,12 @@ def path_leaf(path):
     head, tail = ntpath.split(path)
     return tail or ntpath.basename(head)
 
-print("Connecting to {} as {}".format(args.server, args.username))
+logger.info("Connecting to {} as {}".format(args.server, args.username))
 con_info = {'host':args.server,'username':args.username,'password':args.password,'port':args.port}
 with pysftp.Connection(**con_info) as sftp:
-    print("Copying {} locally.".format(args.serverlocation))
+    logger.info("Copying {} locally.".format(args.serverlocation))
     sftp.get(args.serverlocation)
 
-print("Relocating local {} to {}".format(path_leaf(args.serverlocation),os.path.realpath(args.savelocation)))
+logger.info("Relocating local {} to {}".format(path_leaf(args.serverlocation),os.path.realpath(args.savelocation)))
 shutil.move(path_leaf(args.serverlocation), os.path.realpath(args.savelocation))
-print("Operations finished.")
+logger.info("Operations finished.")

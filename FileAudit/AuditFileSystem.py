@@ -1,6 +1,7 @@
 #import stuff :P
 import csv, sys, argparse, os, textwrap, subprocess
 from prettytable import PrettyTable
+import logging
 
 #Default variable starts for later
 scan_things = False
@@ -8,6 +9,17 @@ output_csv = False
 output_html = False
 output_cli = False
 
+#Make logger and do stuff
+logger=logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler = logging.StreamHandler(sys.stderr)
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+handler = logging.StreamHandler(sys.stderr)
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+del handler
 
 #Setup argparse stuff
 parser = argparse.ArgumentParser(
@@ -46,7 +58,7 @@ def scan_path_ps1():
     subprocess.call('powershell.exe -command Set-ExecutionPolicy RemoteSigned', shell=True)
     subprocess.call('powershell.exe .\GenerateFileAudit.ps1', shell=True)
     os.remove(".\GenerateFileAudit.ps1")
-    print(f"Scan is now finished and raw csv outputted to {args.csvoutput}")
+    logger.info(f"Scan is now finished and raw csv outputted to {args.csvoutput}")
 
 def write_ps1_file():
     f = open("GenerateFileAudit.ps1", "a")
@@ -197,7 +209,7 @@ def html_formatter():
     f1.close()
     f2.close()
 
-    print(f"HTML Output has been sent to: {args.outfile}")
+    logger.info(f"HTML Output has been sent to: {args.outfile}")
 
 def cli_table_display():
     table = PrettyTable()
@@ -212,6 +224,7 @@ def cli_table_display():
                 display_count += 1
             line_count += 1
         table.sortby = "User Group"
+        # Not switching to logger.info because this seems that it's meant to prettyprint, not log anything
         print(table)
         print()
         print(f'Inheritance Flag filter is active by default. Displaying {display_count} out of {line_count} entries.')
@@ -219,12 +232,12 @@ def cli_table_display():
 ##############################
 #Check for args and set bools#
 if args.infile is None and args.scanpath is None:
-    print("Please enter an infile or a scanpath argument.")
-    sys.exit()
+    logger.error("Please enter an infile or a scanpath argument.")
+    sys.exit(1)
 
 if args.infile is not None and args.scanpath is not None:
-    print("Choose infile or scanpath. Not both.")
-    sys.exit()
+    logger.error("Choose infile or scanpath, not both")
+    sys.exit(1)
 
 if args.scanpath is not None:
     scan_things = True
@@ -235,7 +248,7 @@ if args.outfile is not None:
     elif ".html" in args.outfile:
         output_html = True
     else:
-        Print("Outfile is not specified or not .csv/.html. Outputting to CLI.")
+        logger.warn("Outfile is not specified or not .csv/.html. Outputting to CLI.")
         output_cli = True
 
 ##############################
@@ -244,7 +257,7 @@ if scan_things is True:
     scan_path_ps1()
 
 if output_csv == True:
-    Print("CSV Output not set up!! Displaying CLI Output.")
+    logger.warn("CSV Output not set up!! Displaying CLI Output.")
     cli_table_display()
 elif output_html == True:
     html_formatter()
@@ -253,4 +266,4 @@ elif output_cli == True:
 
 if args.generate is True:
     write_ps1_file()
-    print("GenerateFileAudit.ps1 has been created.")
+    logger.info("GenerateFileAudit.ps1 has been created.")

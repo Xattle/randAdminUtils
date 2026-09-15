@@ -1,4 +1,16 @@
-import sys, argparse, os, textwrap, subprocess, shutil, glob
+import sys, argparse, os, textwrap, subprocess, shutil, glob, logger
+
+#Make logger and do stuff
+logger=logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler = logging.StreamHandler(sys.stderr)
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+handler = logging.StreamHandler(sys.stderr)
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+del handler
 
 #Setup argparse stuff
 parser = argparse.ArgumentParser(
@@ -40,7 +52,7 @@ def log_cleaning():
             try:
                 os.remove(filePath)
             except:
-                print("Error while deleting file : ", filePath)
+                logger.error("Error while deleting file : ", filePath)
 
 def log_control():
         outfilename = ".\\output.log"
@@ -68,7 +80,7 @@ def run_command():
             f.write("\n")
 
             #Put stuff in the interpreter
-            print(f"Running {args.run} on {line}")
+            logger.info(f"Running {args.run} on {line}")
             f.write(f"Running psexec \\\\{line} {args.run}")
             f.write("\n")
             f.close()
@@ -98,11 +110,11 @@ def push_copies():
             f.write("\n")
             f.close()
             #Put stuff in the interpreter
-            print(f"Sending {args.copy} to {final_destination}")
+            logger.info(f"Sending {args.copy} to {final_destination}")
 
             #Setup, then run the commands, dumping contents to its own logfile
             final_command = f'xcopy "{args.copy}" "{final_destination}" /Y /E /H /C /I ^>^> .\\logs\\{line}.log'
-            print(final_command)
+            logger.info(final_command)
             subprocess.Popen(f"start cmd.exe /k {final_command}", shell=True)
             print("--------------------------------------------")
             line = fp.readline()
@@ -114,13 +126,13 @@ if args.targets is None:
 
 if os.path.isfile(args.targets) == False:
     print()
-    print("File does not exist: " + args.targets)
-    sys.exit()
+    logger.error("File does not exist: " + args.targets)
+    sys.exit(1)
 
 if args.copy is None and args.run is None:
     print()
-    print("Please specify copy, run, or both.")
-    sys.exit()
+    logger.error("Please specify copy, run, or both.")
+    sys.exit(1)
 
 #Zhu-Li, do the thing.
 if args.copy is not None and args.run is not None:
@@ -130,18 +142,18 @@ if args.copy is not None and args.run is not None:
     run_command()
     input("Once all commands have ran, press Enter to compile logs and close...")
     log_control()
-    sys.exit()
+    sys.exit(0)
 
 if args.copy is not None:
     log_cleaning()
     push_copies()
     input("Once all copies have been pushed (All windows closed), press Enter to compile logs and close...")
     log_control()
-    sys.exit()
+    sys.exit(0)
 
 if args.run is not None:
     log_cleaning()
     run_command()
     input("Once all commands have ran (All windows closed), press Enter to compile logs and close...")
     log_control()
-    sys.exit()
+    sys.exit(0)

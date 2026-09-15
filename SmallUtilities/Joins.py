@@ -2,6 +2,19 @@ import pandas as pd
 import argparse
 import textwrap
 import os.path
+import logging
+
+#Make logger and do stuff
+logger=logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler = logging.StreamHandler(sys.stderr)
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+handler = logging.StreamHandler(sys.stderr)
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+del handler
 
 #Handle command line args
 parser = argparse.ArgumentParser(
@@ -28,19 +41,25 @@ parser.add_argument("-j", "--jointype", help="Which kind of join to be performed
 args = parser.parse_args()
 
 if args.filea == '':
-    sys.exit('File A must be specified')
+    logger.critical('File A must be specified')
+    sys.exit(1)
 if args.fileb == '':
-    sys.exit('File B must be specified')
+    logger.critical('File B must be specified')
+    sys.exit(1)
 
 if not os.path.isfile(args.filea):
-    sys.exit('Cannot find file {}!'.format(args.filea))
+    logger.critical('Cannot find file {}!'.format(args.filea))
+    sys.exit(1)
 if not os.path.isfile(args.fileb):
-    sys.exit('Cannot find file {}!'.format(args.fileb))
+    logger.critical('Cannot find file {}!'.format(args.fileb))
+    sys.exit(1)
 
 if args.fileacolumn == '':
-    sys.exit('File A column header to join must be specified.')
+    logger.critical('File A column header to join must be specified.')
+    sys.exit(1)
 if args.filebcolumn == '':
-    sys.exit('File B column header to join must be specified.')
+    logger.critical('File B column header to join must be specified.')
+    sys.exit(1)
 
 def trim_all_columns(df):
     """
@@ -56,7 +75,8 @@ def runjoin(filea, fileatype, fileacolumn, fileb, filebtype, filebcolumn, jointy
     elif fileatype.lower() == 'excel':
         table_a = pd.read_excel(filea, dtype=str)
     else:
-        sys.exit("Fileatype must be set to listed parameter.")
+        logger.critical("Fileatype must be set to listed parameter.")
+        sys.exit(1)
 
 
     if filebtype.lower() == 'csv':
@@ -64,7 +84,8 @@ def runjoin(filea, fileatype, fileacolumn, fileb, filebtype, filebcolumn, jointy
     elif filebtype.lower() == 'excel':
         table_b = pd.read_excel(fileb, dtype=str)
     else:
-        sys.exit("Filebtype must be set to listed parameter.")
+        logger.critical("Filebtype must be set to listed parameter.")
+        sys.exit(1)
 
     trim_all_columns(table_a)
     trim_all_columns(table_b)
