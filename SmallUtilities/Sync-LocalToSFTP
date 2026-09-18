@@ -327,9 +327,13 @@ function Invoke-WinSCP {
 
 
 function Get-WinSCPBaseCommands {
+
+    $quotedSiteName = ConvertTo-WinSCPCommandArgument `
+        -Value $WinSCPSiteName
+
     return @(
         "option batch abort"
-        "open `"$WinSCPSiteName`""
+        "open $quotedSiteName"
     )
 }
 
@@ -377,7 +381,12 @@ function Ensure-RemoteDirectory {
 
         # Check whether it already exists.
         $commands = Get-WinSCPBaseCommands
-        $commands += "stat `"$current`""
+
+        $quotedCurrent = ConvertTo-WinSCPCommandArgument `
+            -Value $current
+
+        $commands += "stat $quotedCurrent"
+
         $commands += "exit"
 
         $result = Invoke-WinSCP -Commands $commands
@@ -386,7 +395,10 @@ function Ensure-RemoteDirectory {
 
             # Doesn't appear to exist. Try creating it.
             $commands = Get-WinSCPBaseCommands
-            $commands += "mkdir `"$current`""
+            $quotedCurrent = ConvertTo-WinSCPCommandArgument `
+                -Value $current
+
+            $commands += "mkdir $quotedCurrent"
             $commands += "exit"
 
             $mkdirResult = Invoke-WinSCP -Commands $commands
@@ -395,7 +407,10 @@ function Ensure-RemoteDirectory {
             # This also handles a race where someone created it between
             # our stat and mkdir.
             $commands = Get-WinSCPBaseCommands
-            $commands += "stat `"$current`""
+            $quotedCurrent = ConvertTo-WinSCPCommandArgument `
+                -Value $current
+
+            $commands += "mkdir $quotedCurrent"
             $commands += "exit"
 
             $verifyResult = Invoke-WinSCP -Commands $commands
@@ -409,6 +424,16 @@ function Ensure-RemoteDirectory {
     }
 }
 
+function ConvertTo-WinSCPCommandArgument {
+    param (
+        [Parameter(Mandatory)]
+        [string]$Value
+    )
+
+    $escapedValue = $Value.Replace('"', '""')
+
+    return '""' + $escapedValue + '""'
+}
 
 function Test-RemoteFileExists {
     param (
@@ -418,7 +443,10 @@ function Test-RemoteFileExists {
 
     # WinSCP recommends stat for checking remote file existence.
     $commands = Get-WinSCPBaseCommands
-    $commands += "stat `"$RemoteFilePath`""
+    $quotedRemoteFilePath = ConvertTo-WinSCPCommandArgument `
+         -Value $RemoteFilePath
+
+    $commands += "stat $quotedRemoteFilePath"
     $commands += "exit"
 
     $result = Invoke-WinSCP -Commands $commands
@@ -433,7 +461,10 @@ function Test-RemoteFileExists {
     $remoteParent = Get-RemoteParentPath -RemotePath $RemoteFilePath
 
     $commands = Get-WinSCPBaseCommands
-    $commands += "stat `"$remoteParent`""
+    $quotedRemoteParent = ConvertTo-WinSCPCommandArgument `
+        -Value $remoteParent
+
+    $commands += "stat $quotedRemoteParent"
     $commands += "exit"
 
     $parentResult = Invoke-WinSCP -Commands $commands
@@ -551,20 +582,25 @@ function Send-SftpFile {
         [string]$RemotePath
     )
 
+    $quotedSiteName = ConvertTo-WinSCPCommandArgument `
+        -Value $WinSCPSiteName
+
+    $quotedLocalPath = ConvertTo-WinSCPCommandArgument `
+        -Value $LocalPath
+
+    $quotedRemotePath = ConvertTo-WinSCPCommandArgument `
+        -Value $RemotePath
+
     $commands = @(
         "option batch abort"
 
-        # IMPORTANT:
-        # Leaving confirmation ON means an unexpected race where somebody
-        # creates the remote file after our duplicate check causes the
-        # transfer to fail instead of overwrite it.
+        # Prevent unexpected overwrite if something creates the remote file
+        # between our duplicate check and upload.
         "option confirm on"
 
-        "open `"$WinSCPSiteName`""
+        "open $quotedSiteName"
 
-        # Resume support also lets WinSCP use its temporary-file transfer
-        # behavior for SFTP.
-        "put -resumesupport=on `"$LocalPath`" `"$RemotePath`""
+        "put -resumesupport=on $quotedLocalPath $quotedRemotePath"
 
         "exit"
     )
@@ -587,7 +623,6 @@ function Send-SftpFile {
 
     return $false
 }
-
 
 # =============================================================================
 # LOCAL DIRECTORY STRUCTURE
