@@ -3,22 +3,62 @@
     Scanner -> Processing -> SFTP -> Archive transfer pipeline.
 
 .DESCRIPTION
-    Duplicate behavior:
-        A filename is changed ONLY when a collision is detected.
+    Files arrive beneath:
+        Scanner\Incoming
+
+    The relative directory structure beneath Incoming is authoritative and
+    is mirrored to:
+        Scanner\Processing
+        SFTP RemoteRoot
+        Scanner\Archive
+
+    Example:
+        Incoming\Dept A\2026\My Scan.pdf
+
+    becomes:
+        Processing\Dept A\2026\My Scan.pdf
+        /incoming/Dept A/2026/My Scan.pdf
+        Archive\Dept A\2026\My Scan.pdf
+
+    FILE READINESS:
+        A file is only claimed from Incoming when:
+          - It has not been modified for MinimumFileAgeSeconds.
+          - It can be opened exclusively.
+          - It meets MinimumFileSizeBytes.
+
+    DUPLICATES:
+        Original filenames are preserved unless a collision is found.
 
         Example:
             File.pdf
-            File_20260914_121530247.pdf
 
-        Once renamed, the new relative path is preserved through all stages.
+        If already present:
+            File_20260918_121530247.pdf
 
-    Failed SFTP transfers remain in Processing and retry later.
+        If that timestamp somehow also collides:
+            File_20260918_121530247_001.pdf
 
-    An upload-state file prevents a file from being uploaded twice if:
-        - SFTP upload succeeds
-        - but moving Processing -> Archive fails
+        Once renamed, the new relative path is preserved through:
+            Processing -> SFTP -> Archive
 
-    Designed for Windows PowerShell 5.1+.
+    RETRIES:
+        Failed uploads remain in Processing and are retried on the next run.
+
+    UPLOAD STATE:
+        State files prevent an already-successful SFTP upload from being
+        uploaded again if the subsequent Processing -> Archive move fails.
+
+    LOGGING:
+        ScannerTransfer-yyyy-MM-dd.log
+        WinSCP-yyyy-MM-dd.log
+
+    CLEANUP:
+        Archive files and logs older than CleanupDays are removed.
+
+    Designed for:
+        Windows PowerShell 5.1+
+        PowerShell 7+
+        WinSCP.com
 #>
 
 
@@ -26,41 +66,77 @@
 # CONFIGURATION
 # =============================================================================
 
-# Root of the scanner share/folder.
+# Root scanner folder.
+#
+# If this script runs on the server hosting the share, prefer the local path
+# rather than accessing the server through its own SMB share.
 $ScannerRoot = "D:\Scanner"
+
 
 # WinSCP console executable.
 $WinSCPPath = "C:\Program Files (x86)\WinSCP\WinSCP.com"
 
-# WinSCP INI file containing the saved SFTP site.
+
+# WinSCP INI containing the saved SFTP connection.
 $WinSCPIniPath = "C:\Scanner\Config\WinSCP.ini"
 
-# Saved WinSCP Site Manager session name.
+
+# Exact saved session name from WinSCP Site Manager.
 $WinSCPSiteName = "Scanner SFTP"
 
-# Root directory on the SFTP server.
-# Relative paths beneath Incoming are appended to this.
+
+# SFTP root corresponding to Scanner\Incoming.
+#
+# Example:
+#   Incoming\Dept A\File.pdf
+#
+# becomes:
+#   /incoming/Dept A/File.pdf
 $RemoteRoot = "/incoming"
 
-# Archive/log retention.
+
+# Retention period for:
+#   Archive files
+#   PowerShell logs
+#   WinSCP logs
 $CleanupDays = 30
 
-# File must not have been modified for this many seconds before it
-# can leave Incoming.
+
+# Files younger than this remain in Incoming.
+#
+# This protects against scanner software that temporarily closes/reopens
+# a file while producing it.
 $MinimumFileAgeSeconds = 60
 
-# Set to 0 if legitimate zero-byte files are possible.
+
+# Set to 0 if zero-byte files are legitimate.
 $MinimumFileSizeBytes = 1
 
-# "*" for everything, "*.pdf" for PDFs only, etc.
+
+# Examples:
+#   "*"       = all files
+#   "*.pdf"   = PDF only
 $FileFilter = "*"
 
-# If enabled, even empty Incoming directories will be created in
-# Processing, Archive and SFTP.
+
+# If true, empty Incoming directories are also mirrored to:
+#   Processing
+#   Archive
+#   SFTP
 $MirrorEmptyDirectories = $true
 
-# Detailed WinSCP protocol/session logging.
+
+# Detailed WinSCP logging.
 $EnableWinSCPProtocolLog = $true
+
+
+# WinSCP log verbosity.
+#
+# 0 = normal
+# 1 = debug 1
+#
+# Debug 1 is useful while troubleshooting WinSCP command quoting.
+$WinSCPLogLevel = 0
 
 
 # =============================================================================
@@ -72,19 +148,34 @@ $ProcessingDir = Join-Path $ScannerRoot "Processing"
 $ArchiveDir    = Join-Path $ScannerRoot "Archive"
 $LogDir        = Join-Path $ScannerRoot "Logs"
 
-# Internal state directory used to prevent duplicate uploads when an SFTP
-# upload succeeds but the subsequent Archive move fails.
-$StateDir      = Join-Path $ScannerRoot "_TransferState"
+# Internal state used to distinguish:
+#
+#   "needs uploading"
+#
+# from:
+#
+#   "already uploaded, but Archive move failed"
+#
+$StateDir = Join-Path $ScannerRoot "_TransferState"
 
-# Prevent overlapping scheduled executions.
-$LockFile      = Join-Path $ScannerRoot ".ScannerTransfer.lock"
 
-# Cache directories we've already verified during this run.
+# Used to prevent overlapping scheduled runs.
+$LockFile = Join-Path $ScannerRoot ".ScannerTransfer.lock"
+
+
+# Cache remote directories already verified during this execution.
 $script:VerifiedRemoteDirectories = @{}
 
 
+# PowerShell 7.3+ changed native command argument handling.
+# Legacy handling is preferable for the WinSCP /command quoting style.
+if ($PSVersionTable.PSVersion.Major -ge 7) {
+    $PSNativeCommandArgumentPassing = "Legacy"
+}
+
+
 # =============================================================================
-# BASIC HELPERS
+# LOGGING
 # =============================================================================
 
 function Write-Log {
@@ -99,7 +190,9 @@ function Write-Log {
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
     $date      = Get-Date -Format "yyyy-MM-dd"
 
-    $logFile = Join-Path $LogDir "ScannerTransfer-$date.log"
+    $logFile = Join-Path `
+        $LogDir `
+        "ScannerTransfer-$date.log"
 
     $line = "$timestamp [$Level] $Message"
 
@@ -110,6 +203,10 @@ function Write-Log {
 }
 
 
+# =============================================================================
+# LOCAL PATH HELPERS
+# =============================================================================
+
 function Ensure-LocalDirectory {
     param (
         [Parameter(Mandatory)]
@@ -117,11 +214,13 @@ function Ensure-LocalDirectory {
     )
 
     if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+
         New-Item `
             -ItemType Directory `
             -Path $Path `
             -Force `
-            -ErrorAction Stop | Out-Null
+            -ErrorAction Stop |
+        Out-Null
     }
 }
 
@@ -132,7 +231,9 @@ function Ensure-LocalParentDirectory {
         [string]$Path
     )
 
-    $parent = Split-Path -Parent $Path
+    $parent = Split-Path `
+        -Parent `
+        $Path
 
     if (-not [string]::IsNullOrWhiteSpace($parent)) {
         Ensure-LocalDirectory -Path $parent
@@ -149,7 +250,10 @@ function Get-RelativePath {
         [string]$BasePath
     )
 
-    $base = [System.IO.Path]::GetFullPath($BasePath).TrimEnd('\') + '\'
+    $base = (
+        [System.IO.Path]::GetFullPath($BasePath)
+    ).TrimEnd('\') + '\'
+
     $full = [System.IO.Path]::GetFullPath($FullPath)
 
     if (-not $full.StartsWith(
@@ -178,25 +282,41 @@ function New-DuplicateRelativePath {
         [int]$Attempt = 0
     )
 
-    $directory = Split-Path -Parent $RelativePath
-    $fileName  = Split-Path -Leaf $RelativePath
+    $directory = Split-Path `
+        -Parent `
+        $RelativePath
 
-    $baseName  = [System.IO.Path]::GetFileNameWithoutExtension($fileName)
-    $extension = [System.IO.Path]::GetExtension($fileName)
+    $fileName = Split-Path `
+        -Leaf `
+        $RelativePath
+
+    $baseName = [System.IO.Path]::GetFileNameWithoutExtension(
+        $fileName
+    )
+
+    $extension = [System.IO.Path]::GetExtension(
+        $fileName
+    )
 
     if ($Attempt -eq 0) {
+
         $newFileName = "${baseName}_${Timestamp}${extension}"
     }
     else {
+
         $counter = "{0:D3}" -f $Attempt
-        $newFileName = "${baseName}_${Timestamp}_${counter}${extension}"
+
+        $newFileName =
+            "${baseName}_${Timestamp}_${counter}${extension}"
     }
 
     if ([string]::IsNullOrWhiteSpace($directory)) {
         return $newFileName
     }
 
-    return Join-Path $directory $newFileName
+    return Join-Path `
+        $directory `
+        $newFileName
 }
 
 
@@ -210,7 +330,18 @@ function Test-FileReady {
         [System.IO.FileInfo]$File
     )
 
-    # Must be old enough.
+    try {
+        $File.Refresh()
+    }
+    catch {
+        return $false
+    }
+
+
+    # -------------------------------------------------------------------------
+    # Age check
+    # -------------------------------------------------------------------------
+
     $ageSeconds = (
         [DateTime]::UtcNow - $File.LastWriteTimeUtc
     ).TotalSeconds
@@ -219,15 +350,24 @@ function Test-FileReady {
         return $false
     }
 
-    # Must meet minimum size.
+
+    # -------------------------------------------------------------------------
+    # Size check
+    # -------------------------------------------------------------------------
+
     if ($File.Length -lt $MinimumFileSizeBytes) {
         return $false
     }
 
-    # Must be obtainable exclusively.
+
+    # -------------------------------------------------------------------------
+    # Exclusive access check
+    # -------------------------------------------------------------------------
+
     $stream = $null
 
     try {
+
         $stream = New-Object System.IO.FileStream(
             $File.FullName,
             [System.IO.FileMode]::Open,
@@ -238,9 +378,11 @@ function Test-FileReady {
         return $true
     }
     catch {
+
         return $false
     }
     finally {
+
         if ($null -ne $stream) {
             $stream.Dispose()
         }
@@ -260,10 +402,18 @@ function Get-RemotePath {
 
     $root = $RemoteRoot.TrimEnd('/')
 
+    if ([string]::IsNullOrWhiteSpace($root)) {
+        $root = "/"
+    }
+
     $relativeRemote = $RelativePath.Replace('\', '/').TrimStart('/')
 
     if ([string]::IsNullOrWhiteSpace($relativeRemote)) {
         return $root
+    }
+
+    if ($root -eq "/") {
+        return "/$relativeRemote"
     }
 
     return "$root/$relativeRemote"
@@ -282,7 +432,48 @@ function Get-RemoteParentPath {
         return "/"
     }
 
-    return $RemotePath.Substring(0, $index)
+    return $RemotePath.Substring(
+        0,
+        $index
+    )
+}
+
+
+# =============================================================================
+# WINSCP /COMMAND QUOTING
+# =============================================================================
+
+function ConvertTo-WinSCPCommandArgument {
+    param (
+        [Parameter(Mandatory)]
+        [string]$Value
+    )
+
+    <#
+        WinSCP /command requires quotes inside an individual command-line
+        command to be doubled.
+
+        Example input:
+
+            D:\Scanner\Processing\Dept A\My Scan.pdf
+
+        Returns:
+
+            ""D:\Scanner\Processing\Dept A\My Scan.pdf""
+
+        PowerShell then passes the complete command to WinSCP as one argument.
+
+        This allows WinSCP to ultimately interpret:
+
+            put "D:\Scanner\Processing\Dept A\My Scan.pdf" "/incoming/Dept A/My Scan.pdf"
+    #>
+
+    $escapedValue = $Value.Replace(
+        '"',
+        '""'
+    )
+
+    return '""' + $escapedValue + '""'
 }
 
 
@@ -298,26 +489,61 @@ function Invoke-WinSCP {
 
     $date = Get-Date -Format "yyyy-MM-dd"
 
+
+    # -------------------------------------------------------------------------
+    # Base executable arguments
+    # -------------------------------------------------------------------------
+
     $arguments = @(
         "/ini=$WinSCPIniPath"
     )
 
+
+    # -------------------------------------------------------------------------
+    # Optional protocol log
+    # -------------------------------------------------------------------------
+
     if ($EnableWinSCPProtocolLog) {
-        $winSCPLog = Join-Path $LogDir "WinSCP-$date.log"
+
+        $winSCPLog = Join-Path `
+            $LogDir `
+            "WinSCP-$date.log"
 
         $arguments += "/log=$winSCPLog"
-        $arguments += "/loglevel=0"
+        $arguments += "/loglevel=$WinSCPLogLevel"
 
-        # Append all executions for this day to one WinSCP log.
+        # Append each invocation to today's WinSCP logfile.
         $arguments += "/rawconfig"
         $arguments += "Logging\LogFileAppend=on"
     }
 
+
+    # -------------------------------------------------------------------------
+    # Embedded commands
+    # -------------------------------------------------------------------------
+
     $arguments += "/command"
     $arguments += $Commands
 
-    $output = & $WinSCPPath @arguments 2>&1
-    $exitCode = $LASTEXITCODE
+
+    # -------------------------------------------------------------------------
+    # Run WinSCP
+    # -------------------------------------------------------------------------
+
+    try {
+
+        $output = & $WinSCPPath @arguments 2>&1
+        $exitCode = $LASTEXITCODE
+    }
+    catch {
+
+        return [PSCustomObject]@{
+            ExitCode = -1
+            Output   = @(
+                $_.Exception.Message
+            )
+        }
+    }
 
     return [PSCustomObject]@{
         ExitCode = $exitCode
@@ -328,8 +554,9 @@ function Invoke-WinSCP {
 
 function Get-WinSCPBaseCommands {
 
-    $quotedSiteName = ConvertTo-WinSCPCommandArgument `
-        -Value $WinSCPSiteName
+    $quotedSiteName =
+        ConvertTo-WinSCPCommandArgument `
+            -Value $WinSCPSiteName
 
     return @(
         "option batch abort"
@@ -350,18 +577,22 @@ function Ensure-RemoteDirectory {
 
     $normalized = $RemoteDirectory.TrimEnd('/')
 
-    if ([string]::IsNullOrWhiteSpace($normalized) -or $normalized -eq "") {
-        return
+    if ([string]::IsNullOrWhiteSpace($normalized)) {
+        $normalized = "/"
     }
 
     if ($normalized -eq "/") {
         return
     }
 
-    # Require absolute paths so behavior is predictable.
     if (-not $normalized.StartsWith("/")) {
         throw "Remote directory must be absolute: '$RemoteDirectory'"
     }
+
+
+    # -------------------------------------------------------------------------
+    # Build one level at a time.
+    # -------------------------------------------------------------------------
 
     $segments = $normalized.Trim('/').Split('/')
 
@@ -375,65 +606,79 @@ function Ensure-RemoteDirectory {
 
         $current = "$current/$segment"
 
+
+        # Already verified during this run.
         if ($script:VerifiedRemoteDirectories.ContainsKey($current)) {
             continue
         }
 
-        # Check whether it already exists.
+
+        $quotedCurrent =
+            ConvertTo-WinSCPCommandArgument `
+                -Value $current
+
+
+        # ---------------------------------------------------------------------
+        # Does it already exist?
+        # ---------------------------------------------------------------------
+
         $commands = Get-WinSCPBaseCommands
 
-        $quotedCurrent = ConvertTo-WinSCPCommandArgument `
-            -Value $current
-
         $commands += "stat $quotedCurrent"
-
         $commands += "exit"
 
-        $result = Invoke-WinSCP -Commands $commands
+        $result = Invoke-WinSCP `
+            -Commands $commands
+
 
         if ($result.ExitCode -ne 0) {
 
-            # Doesn't appear to exist. Try creating it.
+            # -----------------------------------------------------------------
+            # Try creating it.
+            # -----------------------------------------------------------------
+
             $commands = Get-WinSCPBaseCommands
-            $quotedCurrent = ConvertTo-WinSCPCommandArgument `
-                -Value $current
 
             $commands += "mkdir $quotedCurrent"
             $commands += "exit"
 
-            $mkdirResult = Invoke-WinSCP -Commands $commands
+            $null = Invoke-WinSCP `
+                -Commands $commands
 
-            # Whether mkdir succeeded or not, verify it now.
-            # This also handles a race where someone created it between
-            # our stat and mkdir.
+
+            # -----------------------------------------------------------------
+            # Verify it now exists.
+            #
+            # This also handles a race where another process created the
+            # directory after our first stat.
+            # -----------------------------------------------------------------
+
             $commands = Get-WinSCPBaseCommands
-            $quotedCurrent = ConvertTo-WinSCPCommandArgument `
-                -Value $current
 
-            $commands += "mkdir $quotedCurrent"
+            $commands += "stat $quotedCurrent"
             $commands += "exit"
 
-            $verifyResult = Invoke-WinSCP -Commands $commands
+            $verifyResult = Invoke-WinSCP `
+                -Commands $commands
 
             if ($verifyResult.ExitCode -ne 0) {
-                throw "Unable to create or verify remote directory '$current'."
+
+                throw (
+                    "Unable to create or verify remote directory " +
+                    "'$current'."
+                )
             }
         }
+
 
         $script:VerifiedRemoteDirectories[$current] = $true
     }
 }
 
-function ConvertTo-WinSCPCommandArgument {
-    param (
-        [Parameter(Mandatory)]
-        [string]$Value
-    )
 
-    $escapedValue = $Value.Replace('"', '""')
-
-    return '""' + $escapedValue + '""'
-}
+# =============================================================================
+# REMOTE FILE EXISTENCE
+# =============================================================================
 
 function Test-RemoteFileExists {
     param (
@@ -441,39 +686,66 @@ function Test-RemoteFileExists {
         [string]$RemoteFilePath
     )
 
-    # WinSCP recommends stat for checking remote file existence.
-    $commands = Get-WinSCPBaseCommands
-    $quotedRemoteFilePath = ConvertTo-WinSCPCommandArgument `
-         -Value $RemoteFilePath
+    $quotedRemoteFile =
+        ConvertTo-WinSCPCommandArgument `
+            -Value $RemoteFilePath
 
-    $commands += "stat $quotedRemoteFilePath"
+
+    # -------------------------------------------------------------------------
+    # Check requested file.
+    # -------------------------------------------------------------------------
+
+    $commands = Get-WinSCPBaseCommands
+
+    $commands += "stat $quotedRemoteFile"
     $commands += "exit"
 
-    $result = Invoke-WinSCP -Commands $commands
+    $result = Invoke-WinSCP `
+        -Commands $commands
+
 
     if ($result.ExitCode -eq 0) {
         return $true
     }
 
-    # stat also fails if the connection itself is unavailable.
-    # Verify the parent directory so we don't mistake an SFTP outage
-    # for "file does not exist".
-    $remoteParent = Get-RemoteParentPath -RemotePath $RemoteFilePath
+
+    # -------------------------------------------------------------------------
+    # stat also fails if SFTP itself is unavailable.
+    #
+    # Verify the parent so we can distinguish:
+    #
+    #   file does not exist
+    #
+    # from:
+    #
+    #   SFTP connection/path unavailable
+    # -------------------------------------------------------------------------
+
+    $remoteParent = Get-RemoteParentPath `
+        -RemotePath $RemoteFilePath
+
+    $quotedRemoteParent =
+        ConvertTo-WinSCPCommandArgument `
+            -Value $remoteParent
 
     $commands = Get-WinSCPBaseCommands
-    $quotedRemoteParent = ConvertTo-WinSCPCommandArgument `
-        -Value $remoteParent
 
     $commands += "stat $quotedRemoteParent"
     $commands += "exit"
 
-    $parentResult = Invoke-WinSCP -Commands $commands
+    $parentResult = Invoke-WinSCP `
+        -Commands $commands
+
 
     if ($parentResult.ExitCode -eq 0) {
         return $false
     }
 
-    throw "Could not verify remote path '$RemoteFilePath'. SFTP connection or parent directory check failed."
+
+    throw (
+        "Could not verify remote path '$RemoteFilePath'. " +
+        "The SFTP connection or remote parent directory is unavailable."
+    )
 }
 
 
@@ -487,7 +759,9 @@ function Get-StatePath {
         [string]$RelativePath
     )
 
-    return Join-Path $StateDir ($RelativePath + ".uploadstate.json")
+    return Join-Path `
+        $StateDir `
+        ($RelativePath + ".uploadstate.json")
 }
 
 
@@ -497,13 +771,17 @@ function Get-UploadState {
         [string]$RelativePath
     )
 
-    $statePath = Get-StatePath -RelativePath $RelativePath
+    $statePath = Get-StatePath `
+        -RelativePath $RelativePath
+
 
     if (-not (Test-Path -LiteralPath $statePath -PathType Leaf)) {
         return $null
     }
 
+
     try {
+
         return (
             Get-Content `
                 -LiteralPath $statePath `
@@ -513,7 +791,11 @@ function Get-UploadState {
         )
     }
     catch {
-        throw "Unable to read transfer state '$statePath': $($_.Exception.Message)"
+
+        throw (
+            "Unable to read transfer state '$statePath': " +
+            $_.Exception.Message
+        )
     }
 }
 
@@ -531,9 +813,12 @@ function Set-UploadState {
         [string]$RemotePath
     )
 
-    $statePath = Get-StatePath -RelativePath $RelativePath
+    $statePath = Get-StatePath `
+        -RelativePath $RelativePath
 
-    Ensure-LocalParentDirectory -Path $statePath
+    Ensure-LocalParentDirectory `
+        -Path $statePath
+
 
     $state = [PSCustomObject]@{
         RelativePath = $RelativePath
@@ -541,6 +826,7 @@ function Set-UploadState {
         Status       = $Status
         UpdatedUtc   = [DateTime]::UtcNow.ToString("o")
     }
+
 
     $state |
         ConvertTo-Json |
@@ -558,9 +844,12 @@ function Remove-UploadState {
         [string]$RelativePath
     )
 
-    $statePath = Get-StatePath -RelativePath $RelativePath
+    $statePath = Get-StatePath `
+        -RelativePath $RelativePath
+
 
     if (Test-Path -LiteralPath $statePath) {
+
         Remove-Item `
             -LiteralPath $statePath `
             -Force `
@@ -582,20 +871,39 @@ function Send-SftpFile {
         [string]$RemotePath
     )
 
-    $quotedSiteName = ConvertTo-WinSCPCommandArgument `
-        -Value $WinSCPSiteName
 
-    $quotedLocalPath = ConvertTo-WinSCPCommandArgument `
-        -Value $LocalPath
+    # -------------------------------------------------------------------------
+    # Correct /command quoting.
+    #
+    # These become:
+    #
+    #   ""D:\Path With Spaces\File.pdf""
+    #
+    # rather than:
+    #
+    #   "D:\Path With Spaces\File.pdf"
+    #
+    # because they are embedded inside a WinSCP /command argument.
+    # -------------------------------------------------------------------------
 
-    $quotedRemotePath = ConvertTo-WinSCPCommandArgument `
-        -Value $RemotePath
+    $quotedSiteName =
+        ConvertTo-WinSCPCommandArgument `
+            -Value $WinSCPSiteName
+
+    $quotedLocalPath =
+        ConvertTo-WinSCPCommandArgument `
+            -Value $LocalPath
+
+    $quotedRemotePath =
+        ConvertTo-WinSCPCommandArgument `
+            -Value $RemotePath
+
 
     $commands = @(
         "option batch abort"
 
-        # Prevent unexpected overwrite if something creates the remote file
-        # between our duplicate check and upload.
+        # Leave confirmation enabled so an unexpected collision between
+        # our existence check and PUT fails instead of silently overwriting.
         "option confirm on"
 
         "open $quotedSiteName"
@@ -605,27 +913,39 @@ function Send-SftpFile {
         "exit"
     )
 
-    $result = Invoke-WinSCP -Commands $commands
+
+    $result = Invoke-WinSCP `
+        -Commands $commands
+
 
     if ($result.ExitCode -eq 0) {
         return $true
     }
 
+
     Write-Log `
         "SFTP upload failed: '$LocalPath' -> '$RemotePath'." `
         -Level "ERROR"
 
+
     foreach ($line in $result.Output) {
-        if (-not [string]::IsNullOrWhiteSpace($line)) {
-            Write-Log "WinSCP: $line" -Level "ERROR"
+
+        if (-not [string]::IsNullOrWhiteSpace(
+            [string]$line
+        )) {
+            Write-Log `
+                "WinSCP: $line" `
+                -Level "ERROR"
         }
     }
+
 
     return $false
 }
 
+
 # =============================================================================
-# LOCAL DIRECTORY STRUCTURE
+# MIRROR LOCAL DIRECTORY STRUCTURE
 # =============================================================================
 
 function Mirror-LocalDirectoryStructure {
@@ -636,28 +956,47 @@ function Mirror-LocalDirectoryStructure {
         -Recurse `
         -ErrorAction Stop
 
+
     foreach ($directory in $directories) {
 
         $relative = Get-RelativePath `
             -FullPath $directory.FullName `
             -BasePath $IncomingDir
 
-        Ensure-LocalDirectory `
-            -Path (Join-Path $ProcessingDir $relative)
 
         Ensure-LocalDirectory `
-            -Path (Join-Path $ArchiveDir $relative)
+            -Path (
+                Join-Path `
+                    $ProcessingDir `
+                    $relative
+            )
+
+
+        Ensure-LocalDirectory `
+            -Path (
+                Join-Path `
+                    $ArchiveDir `
+                    $relative
+            )
     }
 }
 
 
+# =============================================================================
+# MIRROR REMOTE DIRECTORY STRUCTURE
+# =============================================================================
+
 function Mirror-RemoteDirectoryStructure {
 
-    Ensure-RemoteDirectory -RemoteDirectory $RemoteRoot
+    # Remote root always needs to exist.
+    Ensure-RemoteDirectory `
+        -RemoteDirectory $RemoteRoot
+
 
     if (-not $MirrorEmptyDirectories) {
         return
     }
+
 
     $directories = Get-ChildItem `
         -LiteralPath $IncomingDir `
@@ -665,14 +1004,17 @@ function Mirror-RemoteDirectoryStructure {
         -Recurse `
         -ErrorAction Stop
 
+
     foreach ($directory in $directories) {
 
         $relative = Get-RelativePath `
             -FullPath $directory.FullName `
             -BasePath $IncomingDir
 
+
         $remoteDirectory = Get-RemotePath `
             -RelativePath $relative
+
 
         Ensure-RemoteDirectory `
             -RemoteDirectory $remoteDirectory
@@ -681,11 +1023,15 @@ function Mirror-RemoteDirectoryStructure {
 
 
 # =============================================================================
-# CLAIM FILES
+# CLAIM READY FILES
+#
 # Incoming -> Processing
 # =============================================================================
 
 function Move-ReadyFilesToProcessing {
+
+    $success = $true
+
 
     $incomingFiles = Get-ChildItem `
         -LiteralPath $IncomingDir `
@@ -694,42 +1040,82 @@ function Move-ReadyFilesToProcessing {
         -Recurse `
         -ErrorAction Stop
 
+
     foreach ($file in $incomingFiles) {
 
+
+        # ---------------------------------------------------------------------
+        # File still being produced.
+        # ---------------------------------------------------------------------
+
         if (-not (Test-FileReady -File $file)) {
-            Write-Log `
-                "Leaving '$($file.FullName)' in Incoming; file is too new, too small, or still in use."
+
+            Write-Log (
+                "Leaving '$($file.FullName)' in Incoming; " +
+                "file is too new, too small, or still in use."
+            )
 
             continue
         }
 
-        $relativePath = Get-RelativePath `
+
+        $originalRelativePath = Get-RelativePath `
             -FullPath $file.FullName `
             -BasePath $IncomingDir
 
-        $processingPath = Join-Path $ProcessingDir $relativePath
-        $archivePath    = Join-Path $ArchiveDir $relativePath
-        $statePath      = Get-StatePath -RelativePath $relativePath
 
-        # Collision detected locally.
+        $relativePath = $originalRelativePath
+
+
+        $processingPath = Join-Path `
+            $ProcessingDir `
+            $relativePath
+
+        $archivePath = Join-Path `
+            $ArchiveDir `
+            $relativePath
+
+        $statePath = Get-StatePath `
+            -RelativePath $relativePath
+
+
+        # ---------------------------------------------------------------------
+        # Local collision.
+        #
+        # Rename ONLY if a duplicate actually exists.
+        # ---------------------------------------------------------------------
+
         if (
             (Test-Path -LiteralPath $processingPath) -or
             (Test-Path -LiteralPath $archivePath) -or
             (Test-Path -LiteralPath $statePath)
         ) {
-            $originalRelativePath = $relativePath
-            $timestamp = Get-Date -Format "yyyyMMdd_HHmmssfff"
+
+            $timestamp = Get-Date `
+                -Format "yyyyMMdd_HHmmssfff"
+
             $attempt = 0
 
+
             do {
+
                 $relativePath = New-DuplicateRelativePath `
                     -RelativePath $originalRelativePath `
                     -Timestamp $timestamp `
                     -Attempt $attempt
 
-                $processingPath = Join-Path $ProcessingDir $relativePath
-                $archivePath    = Join-Path $ArchiveDir $relativePath
-                $statePath      = Get-StatePath -RelativePath $relativePath
+
+                $processingPath = Join-Path `
+                    $ProcessingDir `
+                    $relativePath
+
+                $archivePath = Join-Path `
+                    $ArchiveDir `
+                    $relativePath
+
+                $statePath = Get-StatePath `
+                    -RelativePath $relativePath
+
 
                 $attempt++
 
@@ -739,33 +1125,55 @@ function Move-ReadyFilesToProcessing {
                 (Test-Path -LiteralPath $statePath)
             )
 
-            Write-Log `
-                "Duplicate detected for '$originalRelativePath'. New file renamed to '$relativePath'." `
-                -Level "WARN"
+
+            Write-Log (
+                "Local duplicate detected for " +
+                "'$originalRelativePath'. " +
+                "New file renamed to '$relativePath'."
+            ) -Level "WARN"
         }
 
-        Ensure-LocalParentDirectory -Path $processingPath
+
+        # ---------------------------------------------------------------------
+        # Move Incoming -> Processing
+        # ---------------------------------------------------------------------
 
         try {
+
+            Ensure-LocalParentDirectory `
+                -Path $processingPath
+
+
             Move-Item `
                 -LiteralPath $file.FullName `
                 -Destination $processingPath `
                 -ErrorAction Stop
 
-            Write-Log `
-                "Claimed: Incoming\$relativePath -> Processing\$relativePath"
+
+            Write-Log (
+                "Claimed: '$($file.FullName)' -> " +
+                "'$processingPath'"
+            )
         }
         catch {
-            Write-Log `
-                "Failed moving '$($file.FullName)' to Processing: $($_.Exception.Message)" `
-                -Level "ERROR"
+
+            Write-Log (
+                "Failed moving '$($file.FullName)' to Processing: " +
+                $_.Exception.Message
+            ) -Level "ERROR"
+
+            $success = $false
         }
     }
+
+
+    return $success
 }
 
 
 # =============================================================================
-# PROCESS FILE
+# PROCESS ONE QUEUED FILE
+#
 # Processing -> SFTP -> Archive
 # =============================================================================
 
@@ -775,377 +1183,596 @@ function Process-QueuedFile {
         [System.IO.FileInfo]$File
     )
 
+
     $relativePath = Get-RelativePath `
         -FullPath $File.FullName `
         -BasePath $ProcessingDir
 
-    # -------------------------------------------------------------------------
-    # Check for interrupted/successful previous upload state
-    # -------------------------------------------------------------------------
 
-    $state = Get-UploadState -RelativePath $relativePath
+    # =========================================================================
+    # CHECK PREVIOUS UPLOAD STATE
+    # =========================================================================
+
+    try {
+
+        $state = Get-UploadState `
+            -RelativePath $relativePath
+    }
+    catch {
+
+        Write-Log `
+            $_.Exception.Message `
+            -Level "ERROR"
+
+        return $false
+    }
+
 
     if ($null -ne $state) {
 
+
+        # ---------------------------------------------------------------------
+        # Previous execution was interrupted during upload.
+        # ---------------------------------------------------------------------
+
         if ($state.Status -eq "Uploading") {
 
-            # We may have crashed after the upload completed but before we
-            # could update the state file.
             try {
-                if (Test-RemoteFileExists -RemoteFilePath $state.RemotePath) {
 
-                    Write-Log `
-                        "Recovered interrupted transfer state for '$relativePath'; remote file exists."
+                $remoteExists = Test-RemoteFileExists `
+                    -RemoteFilePath $state.RemotePath
+
+
+                if ($remoteExists) {
+
+                    Write-Log (
+                        "Recovered interrupted transfer state for " +
+                        "'$relativePath'; remote file exists."
+                    )
+
 
                     Set-UploadState `
                         -RelativePath $relativePath `
                         -Status "Uploaded" `
                         -RemotePath $state.RemotePath
 
-                    $state = Get-UploadState -RelativePath $relativePath
+
+                    $state = Get-UploadState `
+                        -RelativePath $relativePath
                 }
                 else {
-                    # Upload never completed.
-                    Remove-UploadState -RelativePath $relativePath
+
+                    # Previous transfer never reached the remote destination.
+                    Remove-UploadState `
+                        -RelativePath $relativePath
+
                     $state = $null
                 }
             }
             catch {
-                Write-Log `
-                    "Unable to recover upload state for '$relativePath': $($_.Exception.Message)" `
-                    -Level "ERROR"
 
-                return
+                Write-Log (
+                    "Unable to recover upload state for " +
+                    "'$relativePath': " +
+                    $_.Exception.Message
+                ) -Level "ERROR"
+
+                return $false
             }
+        }
+        elseif ($state.Status -ne "Uploaded") {
+
+            Write-Log (
+                "Unknown transfer state '$($state.Status)' for " +
+                "'$relativePath'."
+            ) -Level "ERROR"
+
+            return $false
         }
     }
 
 
-    # -------------------------------------------------------------------------
-    # If not already uploaded, prepare and upload
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # FILE HAS NOT YET BEEN CONFIRMED UPLOADED
+    # =========================================================================
 
     if ($null -eq $state) {
 
-        $remoteDirectoryRelative = Split-Path -Parent $relativePath
 
-        if ([string]::IsNullOrWhiteSpace($remoteDirectoryRelative)) {
+        # ---------------------------------------------------------------------
+        # Ensure remote parent directory exists.
+        # ---------------------------------------------------------------------
+
+        $remoteDirectoryRelative = Split-Path `
+            -Parent `
+            $relativePath
+
+
+        if ([string]::IsNullOrWhiteSpace(
+            $remoteDirectoryRelative
+        )) {
+
             $remoteDirectory = $RemoteRoot
         }
         else {
+
             $remoteDirectory = Get-RemotePath `
                 -RelativePath $remoteDirectoryRelative
         }
 
+
         try {
+
             Ensure-RemoteDirectory `
                 -RemoteDirectory $remoteDirectory
         }
         catch {
-            Write-Log `
-                "Unable to create/verify remote directory for '$relativePath': $($_.Exception.Message)" `
-                -Level "ERROR"
 
-            return
+            Write-Log (
+                "Unable to create/verify remote directory for " +
+                "'$relativePath': " +
+                $_.Exception.Message
+            ) -Level "ERROR"
+
+            return $false
         }
 
 
         # ---------------------------------------------------------------------
-        # Check remote + Archive for duplicate
+        # Determine target paths.
         # ---------------------------------------------------------------------
 
-        $archivePath = Join-Path $ArchiveDir $relativePath
-        $remotePath  = Get-RemotePath -RelativePath $relativePath
+        $archivePath = Join-Path `
+            $ArchiveDir `
+            $relativePath
+
+
+        $remotePath = Get-RemotePath `
+            -RelativePath $relativePath
+
+
+        # ---------------------------------------------------------------------
+        # Check remote duplicate.
+        # ---------------------------------------------------------------------
 
         try {
+
             $remoteExists = Test-RemoteFileExists `
                 -RemoteFilePath $remotePath
         }
         catch {
-            Write-Log `
-                "Unable to check remote duplicate for '$relativePath': $($_.Exception.Message)" `
-                -Level "ERROR"
 
-            return
+            Write-Log (
+                "Unable to check remote duplicate for " +
+                "'$relativePath': " +
+                $_.Exception.Message
+            ) -Level "ERROR"
+
+            return $false
         }
+
+
+        # ---------------------------------------------------------------------
+        # Duplicate found either remotely or locally in Archive.
+        #
+        # Rename Processing copy, then use that SAME name on SFTP and Archive.
+        # ---------------------------------------------------------------------
 
         if (
             $remoteExists -or
             (Test-Path -LiteralPath $archivePath)
         ) {
+
             $originalRelativePath = $relativePath
-            $timestamp = Get-Date -Format "yyyyMMdd_HHmmssfff"
+
+            $timestamp = Get-Date `
+                -Format "yyyyMMdd_HHmmssfff"
+
             $attempt = 0
 
+
             do {
-                $candidateRelativePath = New-DuplicateRelativePath `
-                    -RelativePath $originalRelativePath `
-                    -Timestamp $timestamp `
-                    -Attempt $attempt
+
+                $candidateRelativePath =
+                    New-DuplicateRelativePath `
+                        -RelativePath $originalRelativePath `
+                        -Timestamp $timestamp `
+                        -Attempt $attempt
+
 
                 $candidateProcessingPath = Join-Path `
                     $ProcessingDir `
                     $candidateRelativePath
 
+
                 $candidateArchivePath = Join-Path `
                     $ArchiveDir `
                     $candidateRelativePath
 
+
                 $candidateStatePath = Get-StatePath `
                     -RelativePath $candidateRelativePath
+
 
                 $candidateRemotePath = Get-RemotePath `
                     -RelativePath $candidateRelativePath
 
+
                 $attempt++
+
+
+                # -------------------------------------------------------------
+                # Local collision on candidate.
+                # -------------------------------------------------------------
 
                 if (
                     (Test-Path -LiteralPath $candidateProcessingPath) -or
                     (Test-Path -LiteralPath $candidateArchivePath) -or
                     (Test-Path -LiteralPath $candidateStatePath)
                 ) {
+
                     $candidateRemoteExists = $true
+
                     continue
                 }
 
+
+                # -------------------------------------------------------------
+                # Remote collision on candidate.
+                # -------------------------------------------------------------
+
                 try {
-                    $candidateRemoteExists = Test-RemoteFileExists `
-                        -RemoteFilePath $candidateRemotePath
+
+                    $candidateRemoteExists =
+                        Test-RemoteFileExists `
+                            -RemoteFilePath $candidateRemotePath
                 }
                 catch {
-                    Write-Log `
-                        "Unable to verify duplicate candidate '$candidateRelativePath': $($_.Exception.Message)" `
-                        -Level "ERROR"
 
-                    return
+                    Write-Log (
+                        "Unable to verify duplicate candidate " +
+                        "'$candidateRelativePath': " +
+                        $_.Exception.Message
+                    ) -Level "ERROR"
+
+                    return $false
                 }
 
             } while ($candidateRemoteExists)
 
 
+            # -----------------------------------------------------------------
             # Rename the Processing copy.
+            # -----------------------------------------------------------------
+
             try {
+
                 Ensure-LocalParentDirectory `
                     -Path $candidateProcessingPath
+
 
                 Move-Item `
                     -LiteralPath $File.FullName `
                     -Destination $candidateProcessingPath `
                     -ErrorAction Stop
 
-                Write-Log `
-                    "Duplicate detected for '$originalRelativePath'. Processing file renamed to '$candidateRelativePath'." `
-                    -Level "WARN"
+
+                Write-Log (
+                    "Duplicate detected for '$originalRelativePath'. " +
+                    "Processing file renamed to " +
+                    "'$candidateRelativePath'."
+                ) -Level "WARN"
+
 
                 $relativePath = $candidateRelativePath
+
                 $File = Get-Item `
                     -LiteralPath $candidateProcessingPath `
                     -ErrorAction Stop
 
-                $remotePath = $candidateRemotePath
+
+                $remotePath  = $candidateRemotePath
                 $archivePath = $candidateArchivePath
             }
             catch {
-                Write-Log `
-                    "Unable to rename duplicate '$originalRelativePath': $($_.Exception.Message)" `
-                    -Level "ERROR"
 
-                return
+                Write-Log (
+                    "Unable to rename duplicate " +
+                    "'$originalRelativePath': " +
+                    $_.Exception.Message
+                ) -Level "ERROR"
+
+                return $false
             }
         }
 
 
-        # ---------------------------------------------------------------------
-        # Record transfer intent before uploading
-        # ---------------------------------------------------------------------
+        # =========================================================================
+        # RECORD UPLOAD INTENT
+        # =========================================================================
 
         try {
+
             Set-UploadState `
                 -RelativePath $relativePath `
                 -Status "Uploading" `
                 -RemotePath $remotePath
         }
         catch {
-            Write-Log `
-                "Unable to create upload state for '$relativePath': $($_.Exception.Message)" `
-                -Level "ERROR"
 
-            return
+            Write-Log (
+                "Unable to create upload state for " +
+                "'$relativePath': " +
+                $_.Exception.Message
+            ) -Level "ERROR"
+
+            return $false
         }
 
 
-        Write-Log `
-            "Beginning SFTP upload: '$relativePath' -> '$remotePath'"
+        Write-Log (
+            "Beginning SFTP upload: " +
+            "'$relativePath' -> '$remotePath'"
+        )
 
 
-        # ---------------------------------------------------------------------
-        # Upload
-        # ---------------------------------------------------------------------
+        # =========================================================================
+        # UPLOAD
+        # =========================================================================
 
-        $success = Send-SftpFile `
+        $uploadSuccess = Send-SftpFile `
             -LocalPath $File.FullName `
             -RemotePath $remotePath
 
-        if (-not $success) {
 
-            # Since upload failed, remove the transfer intent.
-            Remove-UploadState -RelativePath $relativePath
+        if (-not $uploadSuccess) {
 
-            Write-Log `
-                "Leaving '$relativePath' in Processing for retry." `
-                -Level "WARN"
+            Remove-UploadState `
+                -RelativePath $relativePath
 
-            return
+
+            Write-Log (
+                "Leaving '$relativePath' in Processing for retry."
+            ) -Level "WARN"
+
+
+            return $false
         }
 
 
-        # ---------------------------------------------------------------------
-        # Mark successful upload
-        # ---------------------------------------------------------------------
+        # =========================================================================
+        # RECORD SUCCESS
+        # =========================================================================
 
         try {
+
             Set-UploadState `
                 -RelativePath $relativePath `
                 -Status "Uploaded" `
                 -RemotePath $remotePath
         }
         catch {
-            # Do NOT re-upload immediately.
-            # The Uploading state remains and next run will check the SFTP
-            # destination before doing anything.
-            Write-Log `
-                "Upload succeeded but state update failed for '$relativePath': $($_.Exception.Message)" `
-                -Level "ERROR"
 
-            return
+            # Leave Uploading state behind.
+            #
+            # Next execution will check whether the remote destination exists
+            # before deciding whether another upload is required.
+
+            Write-Log (
+                "Upload succeeded but state update failed for " +
+                "'$relativePath': " +
+                $_.Exception.Message
+            ) -Level "ERROR"
+
+            return $false
         }
 
 
-        Write-Log `
-            "SFTP upload successful: '$relativePath' -> '$remotePath'"
+        Write-Log (
+            "SFTP upload successful: " +
+            "'$relativePath' -> '$remotePath'"
+        )
     }
 
 
-    # -------------------------------------------------------------------------
-    # Upload is confirmed. Move Processing -> Archive.
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # UPLOAD CONFIRMED
+    #
+    # Processing -> Archive
+    # =========================================================================
 
-    $archivePath = Join-Path $ArchiveDir $relativePath
+    $archivePath = Join-Path `
+        $ArchiveDir `
+        $relativePath
 
-    # This normally cannot happen because collision checks occur prior to
-    # uploading. If it somehow happens now, do NOT invent another filename:
-    # SFTP already has this exact relative path, so changing Archive would
-    # break the mirror.
+
+    # This should not normally occur because duplicate checks happened before
+    # uploading.
+    #
+    # Do NOT rename here. SFTP already contains the exact relative filename,
+    # so changing only Archive would break the mirror relationship.
     if (Test-Path -LiteralPath $archivePath) {
 
-        Write-Log `
-            "Upload completed but Archive destination already exists unexpectedly: '$archivePath'. Leaving Processing file in place." `
-            -Level "ERROR"
+        Write-Log (
+            "Upload completed but Archive destination already exists " +
+            "unexpectedly: '$archivePath'. " +
+            "Leaving Processing file in place."
+        ) -Level "ERROR"
 
-        return
+        return $false
     }
 
+
     try {
-        Ensure-LocalParentDirectory -Path $archivePath
+
+        Ensure-LocalParentDirectory `
+            -Path $archivePath
+
 
         Move-Item `
             -LiteralPath $File.FullName `
             -Destination $archivePath `
             -ErrorAction Stop
 
-        Remove-UploadState -RelativePath $relativePath
 
-        Write-Log `
-            "Archived: Processing\$relativePath -> Archive\$relativePath"
+        Remove-UploadState `
+            -RelativePath $relativePath
+
+
+        Write-Log (
+            "Archived: Processing\$relativePath -> " +
+            "Archive\$relativePath"
+        )
+
+
+        return $true
     }
     catch {
-        # State remains "Uploaded", so next run will retry ONLY the archive
-        # operation and will not upload another SFTP copy.
-        Write-Log `
-            "Upload succeeded but Archive move failed for '$relativePath': $($_.Exception.Message)" `
-            -Level "ERROR"
+
+        # Upload state remains "Uploaded".
+        #
+        # Next execution retries only the Archive operation.
+
+        Write-Log (
+            "Upload succeeded but Archive move failed for " +
+            "'$relativePath': " +
+            $_.Exception.Message
+        ) -Level "ERROR"
+
+
+        return $false
     }
 }
 
 
 # =============================================================================
-# CLEANUP
+# RETENTION CLEANUP
 # =============================================================================
 
 function Remove-ExpiredFiles {
 
-    $cutoff = (Get-Date).AddDays(-$CleanupDays)
+    $success = $true
+
+    $cutoff = (Get-Date).AddDays(
+        -$CleanupDays
+    )
 
 
-    # -------------------------------------------------------------------------
-    # Archive files
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # ARCHIVE FILES
+    # =========================================================================
 
     try {
-        Get-ChildItem `
+
+        $expiredArchiveFiles = Get-ChildItem `
             -LiteralPath $ArchiveDir `
             -File `
             -Recurse `
             -ErrorAction Stop |
         Where-Object {
             $_.LastWriteTime -lt $cutoff
-        } |
-        ForEach-Object {
+        }
+
+
+        foreach ($file in $expiredArchiveFiles) {
 
             try {
-                Write-Log `
-                    "Deleting expired Archive file: '$($_.FullName)'"
+
+                Write-Log (
+                    "Deleting expired Archive file: " +
+                    "'$($file.FullName)'"
+                )
+
 
                 Remove-Item `
-                    -LiteralPath $_.FullName `
+                    -LiteralPath $file.FullName `
                     -Force `
                     -ErrorAction Stop
             }
             catch {
-                Write-Log `
-                    "Unable to delete expired Archive file '$($_.FullName)': $($_.Exception.Message)" `
-                    -Level "ERROR"
+
+                Write-Log (
+                    "Unable to delete expired Archive file " +
+                    "'$($file.FullName)': " +
+                    $_.Exception.Message
+                ) -Level "ERROR"
+
+                $success = $false
             }
         }
     }
     catch {
-        Write-Log `
-            "Archive cleanup failed: $($_.Exception.Message)" `
-            -Level "ERROR"
+
+        Write-Log (
+            "Archive cleanup failed: " +
+            $_.Exception.Message
+        ) -Level "ERROR"
+
+        $success = $false
     }
 
 
-    # -------------------------------------------------------------------------
-    # Daily log files
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # LOG FILES
+    # =========================================================================
 
     try {
-        Get-ChildItem `
+
+        $expiredLogs = Get-ChildItem `
             -LiteralPath $LogDir `
             -File `
             -ErrorAction Stop |
         Where-Object {
             $_.LastWriteTime -lt $cutoff
-        } |
-        Remove-Item `
-            -Force `
-            -ErrorAction SilentlyContinue
+        }
+
+
+        foreach ($log in $expiredLogs) {
+
+            try {
+
+                Remove-Item `
+                    -LiteralPath $log.FullName `
+                    -Force `
+                    -ErrorAction Stop
+            }
+            catch {
+
+                Write-Log (
+                    "Unable to delete expired logfile " +
+                    "'$($log.FullName)': " +
+                    $_.Exception.Message
+                ) -Level "ERROR"
+
+                $success = $false
+            }
+        }
     }
     catch {
-        Write-Log `
-            "Log cleanup failed: $($_.Exception.Message)" `
-            -Level "ERROR"
+
+        Write-Log (
+            "Log cleanup failed: " +
+            $_.Exception.Message
+        ) -Level "ERROR"
+
+        $success = $false
     }
 
 
-    # -------------------------------------------------------------------------
-    # Orphaned transfer-state files
+    # =========================================================================
+    # ORPHANED STATE FILES
     #
-    # We never remove state for a file that still exists in Processing.
-    # -------------------------------------------------------------------------
+    # State files are only deleted when:
+    #
+    #   - They are older than CleanupDays
+    #   - Their corresponding Processing file no longer exists
+    #
+    # State for an actual queued file is NEVER cleaned automatically.
+    # =========================================================================
 
     try {
-        Get-ChildItem `
+
+        $oldStateFiles = Get-ChildItem `
             -LiteralPath $StateDir `
             -File `
             -Recurse `
@@ -1153,40 +1780,63 @@ function Remove-ExpiredFiles {
             -ErrorAction Stop |
         Where-Object {
             $_.LastWriteTime -lt $cutoff
-        } |
-        ForEach-Object {
+        }
+
+
+        foreach ($stateFile in $oldStateFiles) {
 
             $stateRelative = Get-RelativePath `
-                -FullPath $_.FullName `
+                -FullPath $stateFile.FullName `
                 -BasePath $StateDir
 
-            $processingRelative = $stateRelative.Substring(
-                0,
-                $stateRelative.Length - ".uploadstate.json".Length
-            )
 
-            $processingPath = Join-Path `
-                $ProcessingDir `
-                $processingRelative
+            $suffix = ".uploadstate.json"
 
-            if (-not (Test-Path -LiteralPath $processingPath)) {
-                Remove-Item `
-                    -LiteralPath $_.FullName `
-                    -Force `
-                    -ErrorAction SilentlyContinue
+
+            if ($stateRelative.EndsWith(
+                $suffix,
+                [System.StringComparison]::OrdinalIgnoreCase
+            )) {
+
+                $processingRelative =
+                    $stateRelative.Substring(
+                        0,
+                        $stateRelative.Length - $suffix.Length
+                    )
+
+
+                $processingPath = Join-Path `
+                    $ProcessingDir `
+                    $processingRelative
+
+
+                if (-not (Test-Path -LiteralPath $processingPath)) {
+
+                    Remove-Item `
+                        -LiteralPath $stateFile.FullName `
+                        -Force `
+                        -ErrorAction SilentlyContinue
+                }
             }
         }
     }
     catch {
-        Write-Log `
-            "Transfer-state cleanup failed: $($_.Exception.Message)" `
-            -Level "ERROR"
+
+        Write-Log (
+            "Transfer-state cleanup failed: " +
+            $_.Exception.Message
+        ) -Level "ERROR"
+
+        $success = $false
     }
+
+
+    return $success
 }
 
 
 # =============================================================================
-# INITIALIZATION
+# INITIALIZE LOCAL DIRECTORIES
 # =============================================================================
 
 foreach ($directory in @(
@@ -1197,11 +1847,18 @@ foreach ($directory in @(
     $LogDir,
     $StateDir
 )) {
-    Ensure-LocalDirectory -Path $directory
+
+    Ensure-LocalDirectory `
+        -Path $directory
 }
 
 
+# =============================================================================
+# CONFIGURATION VALIDATION
+# =============================================================================
+
 if (-not (Test-Path -LiteralPath $WinSCPPath -PathType Leaf)) {
+
     Write-Log `
         "WinSCP executable not found: '$WinSCPPath'" `
         -Level "ERROR"
@@ -1211,6 +1868,7 @@ if (-not (Test-Path -LiteralPath $WinSCPPath -PathType Leaf)) {
 
 
 if (-not (Test-Path -LiteralPath $WinSCPIniPath -PathType Leaf)) {
+
     Write-Log `
         "WinSCP INI not found: '$WinSCPIniPath'" `
         -Level "ERROR"
@@ -1220,8 +1878,29 @@ if (-not (Test-Path -LiteralPath $WinSCPIniPath -PathType Leaf)) {
 
 
 if (-not $RemoteRoot.StartsWith("/")) {
+
     Write-Log `
         "RemoteRoot must be an absolute SFTP path: '$RemoteRoot'" `
+        -Level "ERROR"
+
+    exit 2
+}
+
+
+if ($CleanupDays -lt 1) {
+
+    Write-Log `
+        "CleanupDays must be at least 1." `
+        -Level "ERROR"
+
+    exit 2
+}
+
+
+if ($MinimumFileAgeSeconds -lt 0) {
+
+    Write-Log `
+        "MinimumFileAgeSeconds cannot be negative." `
         -Level "ERROR"
 
     exit 2
@@ -1233,11 +1912,14 @@ if (-not $RemoteRoot.StartsWith("/")) {
 # =============================================================================
 
 $lockHandle = $null
+
 $hadErrors = $false
+
 
 try {
 
     try {
+
         $lockHandle = New-Object System.IO.FileStream(
             $LockFile,
             [System.IO.FileMode]::OpenOrCreate,
@@ -1246,6 +1928,7 @@ try {
         )
     }
     catch {
+
         Write-Log `
             "Another ScannerTransfer instance is already running. Exiting." `
             -Level "WARN"
@@ -1254,65 +1937,91 @@ try {
     }
 
 
-    Write-Log "========== Scanner transfer run started =========="
+    Write-Log `
+        "========== Scanner transfer run started =========="
 
 
     # =========================================================================
-    # STEP 1 - MIRROR LOCAL DIRECTORY STRUCTURE
+    # STEP 1
+    #
+    # Mirror Incoming directory structure locally.
     # =========================================================================
 
     try {
+
         Mirror-LocalDirectoryStructure
     }
     catch {
-        Write-Log `
-            "Unable to mirror local directory structure: $($_.Exception.Message)" `
-            -Level "ERROR"
+
+        Write-Log (
+            "Unable to mirror local directory structure: " +
+            $_.Exception.Message
+        ) -Level "ERROR"
 
         $hadErrors = $true
     }
 
 
     # =========================================================================
-    # STEP 2 - CLAIM COMPLETED FILES
+    # STEP 2
+    #
     # Incoming -> Processing
     # =========================================================================
 
     try {
-        Move-ReadyFilesToProcessing
+
+        $claimSuccess =
+            Move-ReadyFilesToProcessing
+
+
+        if (-not $claimSuccess) {
+            $hadErrors = $true
+        }
     }
     catch {
-        Write-Log `
-            "Unable to process Incoming queue: $($_.Exception.Message)" `
-            -Level "ERROR"
+
+        Write-Log (
+            "Unable to process Incoming queue: " +
+            $_.Exception.Message
+        ) -Level "ERROR"
 
         $hadErrors = $true
     }
 
 
     # =========================================================================
-    # STEP 3 - MIRROR REMOTE DIRECTORY STRUCTURE
+    # STEP 3
+    #
+    # Mirror directory structure to SFTP.
     # =========================================================================
 
     try {
+
         Mirror-RemoteDirectoryStructure
     }
     catch {
-        # SFTP being unavailable should NOT stop us from safely moving completed
-        # files into Processing.
-        Write-Log `
-            "Unable to mirror remote directory structure: $($_.Exception.Message)" `
-            -Level "ERROR"
+
+        # We still continue.
+        #
+        # Completed local files are safe in Processing and can retry next run.
+
+        Write-Log (
+            "Unable to mirror remote directory structure: " +
+            $_.Exception.Message
+        ) -Level "ERROR"
 
         $hadErrors = $true
     }
 
 
     # =========================================================================
-    # STEP 4 - PROCESS SFTP QUEUE
+    # STEP 4
+    #
+    # Processing -> SFTP -> Archive
     # =========================================================================
 
     try {
+
         $processingFiles = Get-ChildItem `
             -LiteralPath $ProcessingDir `
             -File `
@@ -1321,34 +2030,68 @@ try {
             -ErrorAction Stop |
         Sort-Object LastWriteTime
 
+
         foreach ($file in $processingFiles) {
 
             try {
-                Process-QueuedFile -File $file
+
+                $fileSuccess =
+                    Process-QueuedFile `
+                        -File $file
+
+
+                if (-not $fileSuccess) {
+                    $hadErrors = $true
+                }
             }
             catch {
-                Write-Log `
-                    "Unexpected processing error for '$($file.FullName)': $($_.Exception.Message)" `
-                    -Level "ERROR"
+
+                Write-Log (
+                    "Unexpected processing error for " +
+                    "'$($file.FullName)': " +
+                    $_.Exception.Message
+                ) -Level "ERROR"
 
                 $hadErrors = $true
             }
         }
     }
     catch {
-        Write-Log `
-            "Unable to enumerate Processing queue: $($_.Exception.Message)" `
-            -Level "ERROR"
+
+        Write-Log (
+            "Unable to enumerate Processing queue: " +
+            $_.Exception.Message
+        ) -Level "ERROR"
 
         $hadErrors = $true
     }
 
 
     # =========================================================================
-    # STEP 5 - RETENTION CLEANUP
+    # STEP 5
+    #
+    # Retention cleanup.
     # =========================================================================
 
-    Remove-ExpiredFiles
+    try {
+
+        $cleanupSuccess =
+            Remove-ExpiredFiles
+
+
+        if (-not $cleanupSuccess) {
+            $hadErrors = $true
+        }
+    }
+    catch {
+
+        Write-Log (
+            "Unexpected cleanup error: " +
+            $_.Exception.Message
+        ) -Level "ERROR"
+
+        $hadErrors = $true
+    }
 
 
     # =========================================================================
@@ -1356,18 +2099,26 @@ try {
     # =========================================================================
 
     if ($hadErrors) {
-        Write-Log "Scanner transfer run completed WITH ERRORS."
+
+        Write-Log `
+            "Scanner transfer run completed WITH ERRORS."
     }
     else {
-        Write-Log "Scanner transfer run completed successfully."
+
+        Write-Log `
+            "Scanner transfer run completed successfully."
     }
 
-    Write-Log "=================================================="
+
+    Write-Log `
+        "=================================================="
 }
 catch {
-    Write-Log `
-        "Unexpected fatal error: $($_.Exception.Message)" `
-        -Level "ERROR"
+
+    Write-Log (
+        "Unexpected fatal error: " +
+        $_.Exception.Message
+    ) -Level "ERROR"
 
     $hadErrors = $true
 }
@@ -1378,6 +2129,10 @@ finally {
     }
 }
 
+
+# =============================================================================
+# TASK SCHEDULER EXIT CODE
+# =============================================================================
 
 if ($hadErrors) {
     exit 1
