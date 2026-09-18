@@ -554,9 +554,7 @@ function Invoke-WinSCP {
 
 function Get-WinSCPBaseCommands {
 
-    $quotedSiteName =
-        ConvertTo-WinSCPCommandArgument `
-            -Value $WinSCPSiteName
+    $quotedSiteName = $WinSCPSiteName
 
     return @(
         "option batch abort"
